@@ -1,133 +1,4 @@
-# import json 
-# import os
-# import time
-
-# COMM_DIR = "./"
-# CN_FILE = os.path.join(COMM_DIR, "cn_to_teacher.json")
-# TEACHER_TO_CN_FILE = os.path.join(COMM_DIR, "teacher_to_cn.json")
-# TEACHER_TO_CD_FILE = os.path.join(COMM_DIR, "teacher_to_cd.json")
-
-# marksheet = []
-# percentage = 100
-# current_counter = 0
-
-# def write_message(file_path, data):
-#     with open(file_path + ".tmp", "w") as f:
-#         json.dump(data, f)
-#     os.replace(file_path + ".tmp", file_path)
-
-# def read_message(file_path):
-#     if not os.path.exists(file_path):
-#         return None
-#     with open(file_path, "r") as f:
-#         try:
-#             data = json.load(f)
-#             return data
-#         except Exception:
-#             return None
-
-# def clear_file(file_path):
-#     if os.path.exists(file_path):
-#         os.remove(file_path)
-
-# def wait_for_cn_ack(counter, timeout=60):
-#     """Wait for CN to acknowledge marks update for a given counter."""
-#     waited = 0
-#     while waited < timeout:
-#         time.sleep(1)
-#         waited += 1
-#         msg = read_message(CN_FILE)
-#         if msg and msg.get("ack_counter") == counter:
-#             clear_file(CN_FILE)
-#             return True
-#     print(f"[Teacher] Timeout waiting for CN ack for counter {counter}")
-#     return False
-
-# def process_question(msg):
-#     global current_counter, percentage
-#     rn = msg["rn"]
-#     name = msg["name"]
-#     counter = msg["counter"]
-#     current_counter = counter
-
-#     # Check if this question already recorded
-#     for row in marksheet:
-#         if row.get("counter") == counter:
-#             return  # already processed
-
-#     # Add entry with current percentage and counter
-#     marksheet.append({"Sr": len(marksheet)+1, "rn": rn, "name": name, "percentage": percentage, "counter": counter})
-#     print(f"[Teacher] Recorded question {counter}: rn={rn}, name={name}, percentage={percentage}")
-
-#     # After receiving question, reduce marks from 100 to 50 once
-#     if percentage == 100:
-#         percentage = 50
-#         print("[Teacher] Reduced percentage from 100 to 50.")
-#         # Notify CN marks updated
-#         write_message(TEACHER_TO_CN_FILE, {"counter": counter, "percentage": percentage})
-#         # Wait for CN ack before proceeding
-#         if not wait_for_cn_ack(counter):
-#             print(f"[Teacher] Warning: No ack received from CN for question {counter}")
-
-# def process_commands(msg):
-#     global percentage
-#     if msg.get("command") == "final_marks":
-#         # Change percentage to 0
-#         percentage = msg.get("percentage", 0)
-#         print("[Teacher] Final marks update to 0%.")
-#         # Update all entries
-#         for row in marksheet:
-#             row["percentage"] = percentage
-#         # Acknowledge to CN
-#         write_message(TEACHER_TO_CN_FILE, {"command": "final_marks_ack"})
-#         # Wait for CN ack on final marks ack
-#         waited = 0
-#         while waited < 60:
-#             time.sleep(1)
-#             waited += 1
-#             ack = read_message(CN_FILE)
-#             if ack and ack.get("command") == "final_marks_ack_received":
-#                 clear_file(CN_FILE)
-#                 break
-
-#     elif msg.get("command") == "send_marks":
-#         # Prepare marks report and send to CN (and indirectly to CD)
-#         print("[Teacher] Sending marks report...")
-#         marks_report = {"command": "marks_report", "marks": marksheet}
-#         write_message(TEACHER_TO_CN_FILE, marks_report)
-#         # Wait for CN ack for marks_report
-#         waited = 0
-#         while waited < 60:
-#             time.sleep(1)
-#             waited += 1
-#             ack = read_message(CN_FILE)
-#             if ack and ack.get("command") == "marks_report_ack":
-#                 clear_file(CN_FILE)
-#                 break
-
-# def main():
-#     print("[Teacher] Starting Teacher process...")
-
-#     while True:
-#         time.sleep(1)
-#         msg = read_message(CN_FILE)
-#         if msg:
-#             if "command" in msg:
-#                 process_commands(msg)
-#             else:
-#                 process_question(msg)
-#             clear_file(CN_FILE)
-
-# def safe_shutdown():
-#     print("[Teacher] Shutting down...")
-
-# if __name__ == "__main__":
-#     try:
-#         main()
-#     except KeyboardInterrupt:
-#         safe_shutdown()
-
-import json 
+import json
 import os
 import time
 
@@ -137,8 +8,7 @@ TEACHER_TO_CN_FILE = os.path.join(COMM_DIR, "teacher_to_cn.json")
 TEACHER_TO_CD_FILE = os.path.join(COMM_DIR, "teacher_to_cd.json")
 
 marksheet = []
-percentage = 100
-current_counter = 0
+student_states = {}   # track per-student state: {rn: {"violations": int, "percentage": int, "name": str}}
 
 def write_message(file_path, data):
     with open(file_path + ".tmp", "w") as f:
@@ -150,8 +20,7 @@ def read_message(file_path):
         return None
     with open(file_path, "r") as f:
         try:
-            data = json.load(f)
-            return data
+            return json.load(f)
         except Exception:
             return None
 
@@ -159,69 +28,83 @@ def clear_file(file_path):
     if os.path.exists(file_path):
         os.remove(file_path)
 
-def wait_for_cn_ack(counter, timeout=15):
-    waited = 0
-    while waited < timeout:
-        time.sleep(1)
-        waited += 1
-        msg = read_message(CN_FILE)
-        if msg and msg.get("ack_counter") == counter:
-            clear_file(CN_FILE)
-            return True
-    print(f"[Teacher] Timeout waiting for CN ack for counter {counter}")
-    return False
+def handle_violation(msg):
+    """Process a violation message from CN (per student tracking)"""
+    rn = msg.get("rn")
+    name = msg.get("name", f"RN_{rn}")
+    counter = msg.get("counter", -1)
 
-def process_question(msg):
-    global current_counter, percentage
-    rn = msg["rn"]
-    name = msg["name"]
-    counter = msg["counter"]
-    current_counter = counter
+    # init student state if first time
+    if rn not in student_states:
+        student_states[rn] = {"violations": 0, "percentage": 100, "name": name}
 
-    for row in marksheet:
-        if row.get("counter") == counter:
-            return
+    state = student_states[rn]
 
-    marksheet.append({"Sr": len(marksheet)+1, "rn": rn, "name": name, "percentage": percentage, "counter": counter})
-    print(f"[Teacher] Recorded question {counter}: rn={rn}, name={name}, percentage={percentage}")
+    # increment violations
+    state["violations"] += 1
+    vcount = state["violations"]
 
-    if percentage == 100:
-        percentage = 50
-        print("[Teacher] Reduced percentage from 100 to 50.")
-        write_message(TEACHER_TO_CN_FILE, {"counter": counter, "percentage": percentage})
-        wait_for_cn_ack(counter)
+    if vcount == 1:
+        state["percentage"] = 50
+        status = "noted"
+    elif vcount == 2:
+        state["percentage"] = 0
+        status = "terminate"
+    else:
+        print(f"[Teacher] Further violation for rn={rn}, already terminated → ignoring.")
+        return
 
-def process_commands(msg):
-    global percentage
-    if msg.get("command") == "final_marks":
-        percentage = msg.get("percentage", 0)
-        print("[Teacher] Final marks update to 0%.")
-        for row in marksheet:
-            row["percentage"] = percentage
-        write_message(TEACHER_TO_CN_FILE, {"command": "final_marks_ack"})
+    # record in marksheet
+    marksheet.append({
+        "Sr": len(marksheet) + 1,
+        "rn": rn,
+        "name": state["name"],
+        "percentage": state["percentage"],
+        "counter": counter
+    })
 
-        waited = 0
-        while waited < 15:
-            time.sleep(1)
-            waited += 1
-            ack = read_message(CN_FILE)
-            if ack and ack.get("command") == "final_marks_ack_received":
-                clear_file(CN_FILE)
-                break
+    print(f"[Teacher] Violation {vcount} for rn={rn}, counter={counter}, percentage={state['percentage']}")
 
-    elif msg.get("command") == "send_marks":
-        print("[Teacher] Sending marks report...")
-        marks_report = {"command": "marks_report", "marks": marksheet}
-        write_message(TEACHER_TO_CN_FILE, marks_report)
+    # notify CN
+    write_message(TEACHER_TO_CN_FILE, {
+        "rn": rn,
+        "counter": counter,
+        "percentage": state["percentage"],
+        "status": status
+    })
 
-        waited = 0
-        while waited < 15:
-            time.sleep(1)
-            waited += 1
-            ack = read_message(CN_FILE)
-            if ack and ack.get("command") == "marks_report_ack":
-                clear_file(CN_FILE)
-                break
+def handle_command(msg):
+    """Handle control commands from CN/CD"""
+    cmd = msg.get("command")
+
+    if cmd == "send_marks":
+        print("[Teacher] Preparing final marksheet...")
+        report = {"command": "marks_report", "marks": marksheet}
+        # send to CN
+        write_message(TEACHER_TO_CN_FILE, report)
+        # also send to CD
+        write_message(TEACHER_TO_CD_FILE, report)
+        print("[Teacher] Marks report sent to CN and CD.")
+
+    elif cmd == "marks_report_ack":
+        print("[Teacher] Marks report acknowledged by CN/CD → done.")
+
+def process_message(msg):
+    print(f"[Teacher] Incoming msg: {msg}")
+
+    if "ack_counter" in msg:
+        print(f"[Teacher] Ack received from CN for counter={msg['ack_counter']} (rn={msg.get('rn')}) → ignoring.")
+        return
+
+    if "command" in msg:
+        handle_command(msg)
+        return
+
+    if "rn" in msg and "counter" in msg:
+        handle_violation(msg)
+        return
+
+    print("[Teacher] ⚠️ Unknown message format, skipping...")
 
 def main():
     print("[Teacher] Starting Teacher process...")
@@ -229,10 +112,7 @@ def main():
         time.sleep(1)
         msg = read_message(CN_FILE)
         if msg:
-            if "command" in msg:
-                process_commands(msg)
-            else:
-                process_question(msg)
+            process_message(msg)
             clear_file(CN_FILE)
 
 def safe_shutdown():

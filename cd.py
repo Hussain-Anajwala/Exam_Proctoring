@@ -33,6 +33,7 @@ def main():
     print("[CD] Starting CD (student) process...")
 
     exam_over = False
+    exam_terminated = False
 
     while True:
         time.sleep(1)
@@ -43,15 +44,26 @@ def main():
             print(f"[CD] Received question: {current_question} with warning: {msg.get('warning')}")
             clear_file(CN_FILE)
 
-        # Check for exam over notification
+        # Check for exam over / terminated notification
         exam_over_msg = read_message(CN_EXAM_OVER_FILE)
-        if exam_over_msg and exam_over_msg.get("command") == "exam_over":
-            print("[CD] Received exam over notification.")
+        if exam_over_msg:
+            command = exam_over_msg.get("command")
+            if command == "exam_over":
+                print("[CD] Received exam over notification.")
+                exam_over = True
+            elif command == "exam_terminated":
+                rn = exam_over_msg.get("rn")
+                print(f"[CD] Received exam TERMINATED notification for rn={rn}.")
+                exam_terminated = True
             clear_file(CN_EXAM_OVER_FILE)
-            exam_over = True
 
-        if exam_over:
-            print("[CD] Sending exam over request to CN...")
+        if exam_over or exam_terminated:
+            # Send exam over request to CN so it can wrap up
+            if exam_over:
+                print("[CD] Sending exam over request to CN...")
+            elif exam_terminated:
+                print("[CD] Sending exam terminated request to CN...")
+
             write_message(CD_TO_CN_FILE, {"command": "exam_over_request"})
 
             # Wait for marks report from Teacher
