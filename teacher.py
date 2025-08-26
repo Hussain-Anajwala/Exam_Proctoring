@@ -7,7 +7,8 @@ CN_FILE = os.path.join(COMM_DIR, "cn_to_teacher.json")
 TEACHER_TO_CN_FILE = os.path.join(COMM_DIR, "teacher_to_cn.json")
 TEACHER_TO_CD_FILE = os.path.join(COMM_DIR, "teacher_to_cd.json")
 
-marksheet = []
+# marksheet will now be a dict so CN can use .items()
+marksheet = {}
 student_states = {}   # track per-student state: {rn: {"violations": int, "percentage": int, "name": str}}
 
 def write_message(file_path, data):
@@ -29,7 +30,7 @@ def clear_file(file_path):
         os.remove(file_path)
 
 def handle_violation(msg):
-    """Process a violation message from CN (per student tracking)"""
+    """Process a violation message from CN (per student tracking)."""
     rn = msg.get("rn")
     name = msg.get("name", f"RN_{rn}")
     counter = msg.get("counter", -1)
@@ -54,27 +55,22 @@ def handle_violation(msg):
         print(f"[Teacher] Further violation for rn={rn}, already terminated → ignoring.")
         return
 
-    # record in marksheet
-    marksheet.append({
-        "Sr": len(marksheet) + 1,
-        "rn": rn,
-        "name": state["name"],
-        "percentage": state["percentage"],
-        "counter": counter
-    })
+    # update marksheet dict instead of list
+    marksheet[rn] = state["percentage"]
 
-    print(f"[Teacher] Violation {vcount} for rn={rn}, counter={counter}, percentage={state['percentage']}")
+    print(f"[Teacher] Violation {vcount} for rn={rn}, percentage={state['percentage']}")
 
-    # notify CN
+    # notify CN about updated status
     write_message(TEACHER_TO_CN_FILE, {
         "rn": rn,
-        "counter": counter,
+        "violation": vcount,     # include violation number
+        "counter": counter,      # still echo counter back so CN can match
         "percentage": state["percentage"],
         "status": status
     })
 
 def handle_command(msg):
-    """Handle control commands from CN/CD"""
+    """Handle control commands from CN/CD."""
     cmd = msg.get("command")
 
     if cmd == "send_marks":
@@ -92,14 +88,17 @@ def handle_command(msg):
 def process_message(msg):
     print(f"[Teacher] Incoming msg: {msg}")
 
+    # Ignore CN ack (just log it)
     if "ack_counter" in msg:
         print(f"[Teacher] Ack received from CN for counter={msg['ack_counter']} (rn={msg.get('rn')}) → ignoring.")
         return
 
+    # Handle control commands
     if "command" in msg:
         handle_command(msg)
         return
 
+    # Handle violation
     if "rn" in msg and "counter" in msg:
         handle_violation(msg)
         return

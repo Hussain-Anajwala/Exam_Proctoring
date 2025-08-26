@@ -16,7 +16,7 @@ WARNING = "Please focus, exam in progress!"
 def write_message(file_path, data):
     with open(file_path + ".tmp", "w") as f:
         json.dump(data, f)
-    os.replace(file_path + ".tmp", file_path)  # atomic replace
+    os.replace(file_path + ".tmp", file_path)
 
 def read_message(file_path):
     if not os.path.exists(file_path):
@@ -32,10 +32,6 @@ def clear_file(file_path):
         os.remove(file_path)
 
 def wait_for_teacher_update(counter, timeout=15):
-    """
-    Wait for Teacher response. If 'noted' → ack back.
-    If 'terminate' → end exam for that rn and stop further processing.
-    """
     print(f"[CN] Waiting for teacher update for counter {counter} (timeout {timeout}s)...")
     waited = 0
     while waited < timeout:
@@ -46,22 +42,20 @@ def wait_for_teacher_update(counter, timeout=15):
             rn = teacher_msg.get("rn")
             status = teacher_msg.get("status")
             perc = teacher_msg.get("percentage")
-            print(f"[CN] Teacher update: rn={rn}, counter={counter}, status={status}, percentage={perc}")
+            print(f"[CN] Teacher update: rn={rn}, violation={teacher_msg.get('violation_no')}, status={status}, percentage={perc}")
             clear_file(TEACHER_TO_CN_FILE)
 
             if status == "noted":
-                # Send ack back
                 write_message(TEACHER_FILE, {"ack_counter": counter, "rn": rn})
-                print(f"[CN] Acked first violation for rn={rn}")
-                return "continue"
+                print(f"[CN] Acked violation {teacher_msg.get('violation_no')} for rn={rn}")
+                return "continue", rn
             elif status == "terminate":
-                # Terminate exam for this rn
                 print(f"[CN] Terminating exam for rn={rn}")
                 write_message(TEACHER_FILE, {"ack_counter": counter, "rn": rn, "terminated": True})
                 write_message(CD_EXAM_OVER_FILE, {"command": "exam_terminated", "rn": rn})
-                return "terminate"
+                return "terminated_student", rn
     print(f"[CN] Timeout waiting for Teacher update for counter {counter}")
-    return None
+    return None, None
 
 def wait_for_cd_exam_over_request(timeout=15):
     print(f"[CN] Waiting for CD exam over request (timeout {timeout}s)...")
@@ -85,7 +79,10 @@ def wait_for_teacher_marks_report(timeout=15):
         waited += 1
         teacher_msg = read_message(TEACHER_TO_CN_FILE)
         if teacher_msg and teacher_msg.get("command") == "marks_report":
-            print(f"[CN] Received marks report: {teacher_msg['marks']}")
+            print("\n================ FINAL MARKSHEET ================")
+            for rn, marks in teacher_msg["marks"].items():
+                print(f" Roll No {rn}: {marks} marks")
+            print("================================================\n")
             clear_file(TEACHER_TO_CN_FILE)
             write_message(TEACHER_FILE, {"command": "marks_report_ack"})
             return teacher_msg
@@ -95,7 +92,6 @@ def wait_for_teacher_marks_report(timeout=15):
 def main():
     print("[CN] Starting CN process...")
 
-    # Generate 5 random numbers between 1-69, no number repeats >2 times
     nums = []
     counts = {}
     while len(nums) < 5:
@@ -105,54 +101,51 @@ def main():
             counts[rn] = counts.get(rn, 0) + 1
 
     counter = 0
-
-    # Clear leftover files
     clear_file(CD_TO_CN_FILE)
     clear_file(TEACHER_TO_CN_FILE)
     clear_file(CD_EXAM_OVER_FILE)
 
-    exam_terminated = False
+    terminated_students = set()
+    violations_count = {}  # NEW: track violation number per student
 
     for rn in nums:
-        if exam_terminated:
-            print("[CN] Exam already terminated, skipping further questions.")
-            break
+        if rn in terminated_students:
+            print(f"[CN] Skipping rn={rn}, already terminated.")
+            continue
 
         counter += 1
-        msg = {"rn": rn, "name": STUDENT_NAME, "warning": WARNING, "counter": counter}
-        print(f"[CN] Sending question #{counter}: {rn}")
+        violations_count[rn] = violations_count.get(rn, 0) + 1
 
-        # Send to CD and Teacher
+        msg = {
+            "rn": rn,
+            "name": STUDENT_NAME,
+            "warning": WARNING,
+            "counter": counter,
+            "violation_no": violations_count[rn]
+        }
+        print(f"[CN] Sending violation {violations_count[rn]} for rn={rn}")
+
         write_message(CD_FILE, msg)
         write_message(TEACHER_FILE, msg)
 
-        # Wait for Teacher update
-        result = wait_for_teacher_update(counter)
-        if result == "terminate":
-            exam_terminated = True
-            break
+        result, affected_rn = wait_for_teacher_update(counter)
+        if result == "terminated_student" and affected_rn:
+            terminated_students.add(affected_rn)
         elif result is None:
             print(f"[CN] Warning: did not receive teacher update for counter {counter}")
 
-        # Wait before next number (if exam not terminated)
-        if not exam_terminated:
-            print(f"[CN] Waiting 15 seconds before next question...")
-            time.sleep(15)
+        print(f"[CN] Waiting 5 seconds before next violation...")
+        time.sleep(5)
 
-    if not exam_terminated:
-        print("[CN] All questions sent. Waiting for CD exam over request...")
+    print("[CN] All questions sent. Waiting for CD exam over request...")
 
-        # Wait for CD exam over request (e.g., exam naturally ends)
-        if not wait_for_cd_exam_over_request():
-            print("[CN] Warning: did not receive exam over request from CD")
+    if not wait_for_cd_exam_over_request():
+        print("[CN] Warning: did not receive exam over request from CD")
 
-    # Forward exam over request / termination to Teacher
     write_message(TEACHER_FILE, {"command": "send_marks"})
 
-    # Wait for Teacher marks report
     marks_report = wait_for_teacher_marks_report()
     if marks_report:
-        # Send to CD
         write_message(os.path.join(COMM_DIR, "teacher_to_cd.json"), marks_report)
         print("[CN] Sent marks report to CD.")
     else:
