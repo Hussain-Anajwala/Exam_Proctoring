@@ -10,8 +10,13 @@ CD_EXAM_OVER_FILE = os.path.join(COMM_DIR, "cn_to_cd_exam_over.json")
 CD_TO_CN_FILE = os.path.join(COMM_DIR, "cd_to_cn.json")
 TEACHER_TO_CN_FILE = os.path.join(COMM_DIR, "teacher_to_cn.json")
 
-STUDENT_NAME = "Student_1"
 WARNING = "Please focus, exam in progress!"
+
+# predefined student rolls/names (must match teacher.py)
+students_rolls = [58, 59, 65, 75, 68]
+students_names = {
+    58: "Hussain", 59: "Saish", 65: "Khushal", 75: "Hasnain", 68: "Amritesh"
+}
 
 def write_message(file_path, data):
     with open(file_path + ".tmp", "w") as f:
@@ -32,126 +37,100 @@ def clear_file(file_path):
         os.remove(file_path)
 
 def wait_for_teacher_update(counter, timeout=15):
-    print(f"[CN] Waiting for teacher update for counter {counter} (timeout {timeout}s)...")
     waited = 0
     while waited < timeout:
         time.sleep(1)
         waited += 1
         teacher_msg = read_message(TEACHER_TO_CN_FILE)
         if teacher_msg and teacher_msg.get("counter") == counter:
-            rn = teacher_msg.get("rn")
+            roll = teacher_msg.get("roll")
             status = teacher_msg.get("status")
             perc = teacher_msg.get("percentage")
-            print(f"[CN] Teacher update: rn={rn}, violation={teacher_msg.get('violation_no')}, status={status}, percentage={perc}")
             clear_file(TEACHER_TO_CN_FILE)
 
             if status == "noted":
-                write_message(TEACHER_FILE, {"ack_counter": counter, "rn": rn})
-                print(f"[CN] Acked violation {teacher_msg.get('violation_no')} for rn={rn}")
-                return "continue", rn
+                write_message(TEACHER_FILE, {"ack_counter": counter, "roll": roll})
+                return "continue", roll
             elif status == "terminate":
-                print(f"[CN] Terminating exam for rn={rn}")
-                write_message(TEACHER_FILE, {"ack_counter": counter, "rn": rn, "terminated": True})
-                write_message(CD_EXAM_OVER_FILE, {"command": "exam_terminated", "rn": rn})
-                return "terminated_student", rn
-    print(f"[CN] Timeout waiting for Teacher update for counter {counter}")
+                write_message(TEACHER_FILE, {"ack_counter": counter, "roll": roll, "terminated": True})
+                write_message(CD_EXAM_OVER_FILE, {"command": "exam_terminated", "roll": roll})
+                return "terminated_student", roll
     return None, None
 
 def wait_for_cd_exam_over_request(timeout=15):
-    print(f"[CN] Waiting for CD exam over request (timeout {timeout}s)...")
     waited = 0
     while waited < timeout:
         time.sleep(1)
         waited += 1
         cd_msg = read_message(CD_TO_CN_FILE)
         if cd_msg and cd_msg.get("command") == "exam_over_request":
-            print("[CN] Received exam over request from CD, forwarding to Teacher.")
             clear_file(CD_TO_CN_FILE)
             return True
-    print("[CN] Timeout waiting for CD exam over request!")
     return False
 
 def wait_for_teacher_marks_report(timeout=15):
-    print(f"[CN] Waiting for marks report from Teacher (timeout {timeout}s)...")
     waited = 0
     while waited < timeout:
         time.sleep(1)
         waited += 1
         teacher_msg = read_message(TEACHER_TO_CN_FILE)
         if teacher_msg and teacher_msg.get("command") == "marks_report":
-            print("\n================ FINAL MARKSHEET ================")
-            for rn, marks in teacher_msg["marks"].items():
-                print(f" Roll No {rn}: {marks} marks")
-            print("================================================\n")
+            for roll, marks in teacher_msg["marks"].items():
+                print(f" Roll {roll}: {marks} marks")
             clear_file(TEACHER_TO_CN_FILE)
             write_message(TEACHER_FILE, {"command": "marks_report_ack"})
             return teacher_msg
-    print("[CN] Timeout waiting for Teacher marks report!")
     return None
 
 def main():
-    print("[CN] Starting CN process...")
-
     nums = []
     counts = {}
-    while len(nums) < 5:
-        rn = random.randint(1, 3)
-        if counts.get(rn, 0) < 2:
-            nums.append(rn)
-            counts[rn] = counts.get(rn, 0) + 1
+    terminated_students = set()
+    violations_count = {}
 
     counter = 0
     clear_file(CD_TO_CN_FILE)
     clear_file(TEACHER_TO_CN_FILE)
     clear_file(CD_EXAM_OVER_FILE)
 
-    terminated_students = set()
-    violations_count = {}  # NEW: track violation number per student
+    # Generate 5 random question violations
+    while len(nums) < 5:
+        roll = random.choice(students_rolls)
+        if counts.get(roll, 0) < 2:
+            nums.append(roll)
+            counts[roll] = counts.get(roll, 0) + 1
 
-    for rn in nums:
-        if rn in terminated_students:
-            print(f"[CN] Skipping rn={rn}, already terminated.")
+    for roll in nums:
+        if roll in terminated_students:
             continue
 
         counter += 1
-        violations_count[rn] = violations_count.get(rn, 0) + 1
+        violations_count[roll] = violations_count.get(roll, 0) + 1
+        question_no = random.randint(1, 50)
 
         msg = {
-            "rn": rn,
-            "name": STUDENT_NAME,
+            "roll": roll,
+            "name": students_names[roll],
             "warning": WARNING,
             "counter": counter,
-            "violation_no": violations_count[rn]
+            "question_no": question_no,
+            "violation_no": violations_count[roll]
         }
-        print(f"[CN] Sending violation {violations_count[rn]} for rn={rn}")
 
         write_message(CD_FILE, msg)
         write_message(TEACHER_FILE, msg)
 
-        result, affected_rn = wait_for_teacher_update(counter)
-        if result == "terminated_student" and affected_rn:
-            terminated_students.add(affected_rn)
-        elif result is None:
-            print(f"[CN] Warning: did not receive teacher update for counter {counter}")
+        result, affected_roll = wait_for_teacher_update(counter)
+        if result == "terminated_student" and affected_roll:
+            terminated_students.add(affected_roll)
 
-        print(f"[CN] Waiting 5 seconds before next violation...")
-        time.sleep(5)
-
-    print("[CN] All questions sent. Waiting for CD exam over request...")
+        time.sleep(2)
 
     if not wait_for_cd_exam_over_request():
-        print("[CN] Warning: did not receive exam over request from CD")
+        pass
 
     write_message(TEACHER_FILE, {"command": "send_marks"})
-
-    marks_report = wait_for_teacher_marks_report()
-    if marks_report:
-        write_message(os.path.join(COMM_DIR, "teacher_to_cd.json"), marks_report)
-        print("[CN] Sent marks report to CD.")
-    else:
-        print("[CN] Warning: marks report missing, exam incomplete.")
-
-    print("[CN] Exam workflow complete.")
+    wait_for_teacher_marks_report()
 
 if __name__ == "__main__":
     try:

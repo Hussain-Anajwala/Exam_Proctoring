@@ -7,9 +7,17 @@ CN_FILE = os.path.join(COMM_DIR, "cn_to_teacher.json")
 TEACHER_TO_CN_FILE = os.path.join(COMM_DIR, "teacher_to_cn.json")
 TEACHER_TO_CD_FILE = os.path.join(COMM_DIR, "teacher_to_cd.json")
 
-# marksheet will now be a dict so CN can use .items()
-marksheet = {}
-student_states = {}   # track per-student state: {rn: {"violations": int, "percentage": int, "name": str}}
+# predefined student marksheet
+students = { 
+    1: {"roll": 58, "name": "Hussain", "violation": 0}, 
+    2: {"roll": 59, "name": "Saish", "violation": 0}, 
+    3: {"roll": 65, "name": "Khushal", "violation": 0}, 
+    4: {"roll": 75, "name": "Hasnain", "violation": 0}, 
+    5: {"roll": 68, "name": "Amritesh", "violation": 0}, 
+}
+
+marksheet = {}  # store percentage per roll
+student_states = {}  # track per-student state: {roll: {"violations": int, "percentage": int, "name": str}}
 
 def write_message(file_path, data):
     with open(file_path + ".tmp", "w") as f:
@@ -30,18 +38,14 @@ def clear_file(file_path):
         os.remove(file_path)
 
 def handle_violation(msg):
-    """Process a violation message from CN (per student tracking)."""
-    rn = msg.get("rn")
-    name = msg.get("name", f"RN_{rn}")
-    counter = msg.get("counter", -1)
+    roll = msg.get("roll")
+    question_no = msg.get("question_no", -1)
+    name = msg.get("name") or f"Roll_{roll}"
 
-    # init student state if first time
-    if rn not in student_states:
-        student_states[rn] = {"violations": 0, "percentage": 100, "name": name}
+    if roll not in student_states:
+        student_states[roll] = {"violations": 0, "percentage": 100, "name": name}
 
-    state = student_states[rn]
-
-    # increment violations
+    state = student_states[roll]
     state["violations"] += 1
     vcount = state["violations"]
 
@@ -52,54 +56,43 @@ def handle_violation(msg):
         state["percentage"] = 0
         status = "terminate"
     else:
-        print(f"[Teacher] Further violation for rn={rn}, already terminated → ignoring.")
+        print(f"[Teacher] Roll {roll} already terminated → ignoring.")
         return
 
-    # update marksheet dict instead of list
-    marksheet[rn] = state["percentage"]
+    marksheet[roll] = state["percentage"]
 
-    print(f"[Teacher] Violation {vcount} for rn={rn}, percentage={state['percentage']}")
-
-    # notify CN about updated status
+    print(f"[Teacher] Violation {vcount} for roll {roll} on Q{question_no}, percentage={state['percentage']}")
     write_message(TEACHER_TO_CN_FILE, {
-        "rn": rn,
-        "violation": vcount,     # include violation number
-        "counter": counter,      # still echo counter back so CN can match
+        "roll": roll,
+        "violation": vcount,
+        "question_no": question_no,
         "percentage": state["percentage"],
         "status": status
     })
 
 def handle_command(msg):
-    """Handle control commands from CN/CD."""
     cmd = msg.get("command")
-
     if cmd == "send_marks":
         print("[Teacher] Preparing final marksheet...")
         report = {"command": "marks_report", "marks": marksheet}
-        # send to CN
         write_message(TEACHER_TO_CN_FILE, report)
-        # also send to CD
         write_message(TEACHER_TO_CD_FILE, report)
         print("[Teacher] Marks report sent to CN and CD.")
-
     elif cmd == "marks_report_ack":
         print("[Teacher] Marks report acknowledged by CN/CD → done.")
 
 def process_message(msg):
     print(f"[Teacher] Incoming msg: {msg}")
 
-    # Ignore CN ack (just log it)
     if "ack_counter" in msg:
-        print(f"[Teacher] Ack received from CN for counter={msg['ack_counter']} (rn={msg.get('rn')}) → ignoring.")
+        print(f"[Teacher] Ack received from CN for counter={msg['ack_counter']} (roll={msg.get('roll')}) → ignoring.")
         return
 
-    # Handle control commands
     if "command" in msg:
         handle_command(msg)
         return
 
-    # Handle violation
-    if "rn" in msg and "counter" in msg:
+    if "roll" in msg and "question_no" in msg:
         handle_violation(msg)
         return
 
