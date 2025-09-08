@@ -19,12 +19,12 @@ students_names = {
 }
 
 def write_message(file_path, data):
-    with open(file_path + ".tmp", "w") as f:
-        # json.dump(data, f)
-        f.seek(0)         # go to start
-        json.dump(data, f) # overwrite fresh JSON
-        f.truncate()      # remove leftovers
-    os.replace(file_path + ".tmp", file_path)
+    tmp_file = file_path + ".tmp"
+    with open(tmp_file, "w") as f:
+        f.seek(0)
+        json.dump(data, f)
+        f.truncate()
+    os.replace(tmp_file, file_path)
 
 def read_message(file_path):
     if not os.path.exists(file_path):
@@ -52,12 +52,19 @@ def wait_for_teacher_update(counter, timeout=15):
             clear_file(TEACHER_TO_CN_FILE)
 
             if status == "noted":
+                # send ack back to teacher
                 write_message(TEACHER_FILE, {"ack_counter": counter, "roll": roll})
                 return "continue", roll
+
             elif status == "terminate":
+                # tell teacher + forward termination to CD
                 write_message(TEACHER_FILE, {"ack_counter": counter, "roll": roll, "terminated": True})
-                write_message(CD_EXAM_OVER_FILE, {"command": "exam_terminated", "roll": roll})
+                write_message(CD_EXAM_OVER_FILE, {
+                    "command": "exam_terminated",
+                    "roll": roll
+                })
                 return "terminated_student", roll
+
     return None, None
 
 def wait_for_cd_exam_over_request(timeout=15):
@@ -80,7 +87,7 @@ def wait_for_teacher_marks_report():
         if msg and msg.get("command") == "marks_report":
             marks = msg.get("marks", {})
             for roll_str, mark in marks.items():
-                roll = int(roll_str)  # convert key from str → int
+                roll = int(roll_str)
                 name = students_names.get(roll, "Unknown")
                 print(f" {roll:<4} | {name:<9} | {mark}")
             break
@@ -130,9 +137,11 @@ def main():
 
         time.sleep(2)
 
+    # Wait for CD exam over
     if not wait_for_cd_exam_over_request():
         pass
 
+    # Ask teacher for final marks
     write_message(TEACHER_FILE, {"command": "send_marks"})
     wait_for_teacher_marks_report()
 

@@ -26,12 +26,12 @@ student_states = {
 }
 
 def write_message(file_path, data):
-    with open(file_path + ".tmp", "w") as f:
-        # json.dump(data, f)
-        f.seek(0)         # go to start
-        json.dump(data, f) # overwrite fresh JSON
-        f.truncate()      # remove leftovers
-    os.replace(file_path + ".tmp", file_path)
+    tmp_file = file_path + ".tmp"
+    with open(tmp_file, "w") as f:
+        f.seek(0)
+        json.dump(data, f)
+        f.truncate()
+    os.replace(tmp_file, file_path)
 
 def read_message(file_path):
     if not os.path.exists(file_path):
@@ -65,7 +65,7 @@ def handle_violation(msg):
         print(f"[Teacher] Roll {roll} already terminated → ignoring.")
         return
 
-    marksheet[roll] = state["percentage"]
+    marksheet[roll] = max(0, state["percentage"])  # cap at 0
 
     print(f"[Teacher] Violation {vcount} for roll {roll} on Q{question_no}, percentage={state['percentage']}")
     write_message(TEACHER_TO_CN_FILE, {
