@@ -8,9 +8,16 @@ CN_EXAM_OVER_FILE = os.path.join(COMM_DIR, "cn_to_cd_exam_over.json")
 CD_TO_CN_FILE = os.path.join(COMM_DIR, "cd_to_cn.json")
 TEACHER_TO_CD_FILE = os.path.join(COMM_DIR, "teacher_to_cd.json")
 
+students_names = {
+    58: "Hussain", 59: "Saish", 65: "Khushal", 75: "Hasnain", 68: "Amritesh"
+}
+
 def write_message(file_path, data):
     with open(file_path + ".tmp", "w") as f:
-        json.dump(data, f)
+        # json.dump(data, f)
+        f.seek(0)         # go to start
+        json.dump(data, f) # overwrite fresh JSON
+        f.truncate()      # remove leftovers
     os.replace(file_path + ".tmp", file_path)
 
 def read_message(file_path):
@@ -62,8 +69,11 @@ def main():
                 time.sleep(1)
                 marks_report = read_message(TEACHER_TO_CD_FILE)
                 if marks_report and marks_report.get("command") == "marks_report":
+                    print("\n📄 Final Marksheet (via CD):")
+                    print(" Roll | Name      | Marks ")
+                    print("---------------------------")
                     for roll, marks in marks_report["marks"].items():
-                        print(f"Roll={roll} | Marks={marks}")
+                        print(f" {roll:<4} | {students_names[roll]:<9} | {marks}")
                     clear_file(TEACHER_TO_CD_FILE)
                     write_message(CD_TO_CN_FILE, {"command": "marks_report_ack"})
                     return

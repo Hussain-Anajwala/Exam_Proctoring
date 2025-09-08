@@ -20,7 +20,10 @@ students_names = {
 
 def write_message(file_path, data):
     with open(file_path + ".tmp", "w") as f:
-        json.dump(data, f)
+        # json.dump(data, f)
+        f.seek(0)         # go to start
+        json.dump(data, f) # overwrite fresh JSON
+        f.truncate()      # remove leftovers
     os.replace(file_path + ".tmp", file_path)
 
 def read_message(file_path):
@@ -68,19 +71,20 @@ def wait_for_cd_exam_over_request(timeout=15):
             return True
     return False
 
-def wait_for_teacher_marks_report(timeout=15):
-    waited = 0
-    while waited < timeout:
+def wait_for_teacher_marks_report():
+    print("\n📄 Final Marksheet (via CN):")
+    print(" Roll | Name      | Marks ")
+    print("---------------------------")
+    while True:
+        msg = read_message(TEACHER_TO_CN_FILE)
+        if msg and msg.get("command") == "marks_report":
+            marks = msg.get("marks", {})
+            for roll_str, mark in marks.items():
+                roll = int(roll_str)  # convert key from str → int
+                name = students_names.get(roll, "Unknown")
+                print(f" {roll:<4} | {name:<9} | {mark}")
+            break
         time.sleep(1)
-        waited += 1
-        teacher_msg = read_message(TEACHER_TO_CN_FILE)
-        if teacher_msg and teacher_msg.get("command") == "marks_report":
-            for roll, marks in teacher_msg["marks"].items():
-                print(f" Roll {roll}: {marks} marks")
-            clear_file(TEACHER_TO_CN_FILE)
-            write_message(TEACHER_FILE, {"command": "marks_report_ack"})
-            return teacher_msg
-    return None
 
 def main():
     nums = []

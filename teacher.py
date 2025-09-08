@@ -16,12 +16,21 @@ students = {
     5: {"roll": 68, "name": "Amritesh", "violation": 0}, 
 }
 
-marksheet = {}  # store percentage per roll
-student_states = {}  # track per-student state: {roll: {"violations": int, "percentage": int, "name": str}}
+# Initialize marksheet: all students start with 100 marks
+marksheet = {s["roll"]: 100 for s in students.values()}
+
+# Track state for each student
+student_states = {
+    s["roll"]: {"violations": 0, "percentage": 100, "name": s["name"]}
+    for s in students.values()
+}
 
 def write_message(file_path, data):
     with open(file_path + ".tmp", "w") as f:
-        json.dump(data, f)
+        # json.dump(data, f)
+        f.seek(0)         # go to start
+        json.dump(data, f) # overwrite fresh JSON
+        f.truncate()      # remove leftovers
     os.replace(file_path + ".tmp", file_path)
 
 def read_message(file_path):
@@ -41,9 +50,6 @@ def handle_violation(msg):
     roll = msg.get("roll")
     question_no = msg.get("question_no", -1)
     name = msg.get("name") or f"Roll_{roll}"
-
-    if roll not in student_states:
-        student_states[roll] = {"violations": 0, "percentage": 100, "name": name}
 
     state = student_states[roll]
     state["violations"] += 1
