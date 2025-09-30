@@ -121,7 +121,7 @@ const ViolationDetection: React.FC = () => {
     
     try {
       // Call backend reset endpoint to clear all violations
-      await fetch('http://localhost:8000/api/v1/session/reset', { method: 'POST' });
+      await fetch('/api/v1/session/reset', { method: 'POST' });
       console.log('Backend reset successful');
     } catch (err) {
       console.error('Failed to reset backend:', err);
@@ -414,7 +414,7 @@ const ViolationDetection: React.FC = () => {
                 </div>
                 <div className="text-center">
                   <p className="text-2xl font-bold text-orange-600">
-                    {Object.values(marksheet.violations).reduce((sum, count) => sum + count, 0)}
+                    {(Object.values(marksheet.violations) as number[]).reduce((sum, count) => sum + count, 0)}
                   </p>
                   <p className="text-sm text-gray-600">Total Violations</p>
                 </div>
