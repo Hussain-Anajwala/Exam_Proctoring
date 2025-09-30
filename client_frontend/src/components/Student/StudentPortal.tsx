@@ -13,8 +13,7 @@ import { examApi } from '../../services/api';
 import { useUser } from '../../contexts/UserContext';
 
 interface Question {
-  id: number;
-  question: string;
+  q: string;
   options: string[];
   ans: string;
 }
@@ -30,12 +29,12 @@ interface ExamStatus {
 const StudentPortal = () => {
   const { user } = useUser();
   const [examStarted, setExamStarted] = useState(false);
-  const [questions, setQuestions] = useState<Question[]>([]);
-  const [answers, setAnswers] = useState<string[]>([]);
+  const [questions, setQuestions] = useState([] as Question[]);
+  const [answers, setAnswers] = useState([] as string[]);
   const [submitted, setSubmitted] = useState(false);
-  const [examStatus, setExamStatus] = useState<ExamStatus | null>(null);
+  const [examStatus, setExamStatus] = useState(null as ExamStatus | null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState(null as string | null);
   const [timeRemaining, setTimeRemaining] = useState(1800); // 30 minutes
 
   const studentId = user?.id || 'guest';
@@ -222,7 +221,7 @@ const StudentPortal = () => {
                     {idx + 1}
                   </div>
                   <h3 className="font-semibold text-gray-900 text-lg flex-1">
-                    {q.question}
+                    {q.q}
                   </h3>
                 </div>
                 <div className="space-y-3 ml-11">
