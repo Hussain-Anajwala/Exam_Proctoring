@@ -650,7 +650,7 @@ const Database = () => {
                   setDemoSteps(prev=>[`Replica ${demoConfig.failReplica} failed`, ...prev]);
                   await fetchReplicaStatus();
                   const read = await databaseApi.readRecord(rec.rn);
-                  setDemoSteps(prev=>[`Read after failure via ${read.replica}`, ...prev]);
+                  setDemoSteps(prev=>[`Read after failure: ${read.record?.name || 'Success'}`, ...prev]);
                 } catch (e) {
                   console.error(e);
                   setDemoSteps(prev=>['Demo error - see console', ...prev]);
