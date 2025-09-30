@@ -29,7 +29,7 @@ const Navbar = () => {
   };
 
   const navigation = [
-    { name: 'Dashboard', href: '/', icon: Activity },
+    { name: 'Dashboard', href: '/dashboard', icon: Activity },
     { name: 'Teacher', href: '/teacher', icon: Shield },
     { name: 'Processor', href: '/processor', icon: Activity },
     { name: 'Student', href: '/student', icon: Users },
