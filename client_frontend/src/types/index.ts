@@ -101,6 +101,8 @@ export interface LoadBalanceResponse {
   student_id: string;
   via: string;
   message: string;
+  worker_id?: string;
+  batch_id?: number;
 }
 
 export interface LoadBalanceStatus {
@@ -109,6 +111,13 @@ export interface LoadBalanceStatus {
   migrate_threshold: number;
   local_queue_size: number;
   backup_queue_size: number;
+  batch_processing: boolean;
+  current_batch_id: number;
+  local_done_count: number;
+  backup_done_count: number;
+  total_processed: number;
+  worker_status: Record<string, string>;
+  batch_end_sent: boolean;
 }
 
 // Task 8: Database Types
@@ -132,7 +141,7 @@ export interface DatabaseResponse {
   record?: StudentRecord;
   message?: string;
   updated_record?: StudentRecord;
-  results?: StudentRecord[];
+  records?: StudentRecord[];
   count?: number;
   total_records?: number;
 }

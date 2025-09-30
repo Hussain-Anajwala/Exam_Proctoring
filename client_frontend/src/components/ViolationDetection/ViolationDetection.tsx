@@ -24,6 +24,12 @@ const ViolationDetection: React.FC = () => {
   const [marksheet, setMarksheet] = useState<Marksheet | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [demoRunning, setDemoRunning] = useState(false);
+  const [demoSteps, setDemoSteps] = useState<string[]>([]);
+  const [demoConfig, setDemoConfig] = useState({
+    studentRoll: 58,
+    violationsToSimulate: 2,
+  });
 
   const students = [
     { roll: 58, name: 'Hussain' },
@@ -38,9 +44,11 @@ const ViolationDetection: React.FC = () => {
   }, []);
 
   const fetchMarksheet = async () => {
+    console.log('Refresh button clicked - Violation Detection');
     try {
       const data = await violationApi.getMarksheet();
-      setMarksheet(data);
+      setMarksheet({...data}); // Force new object reference
+      console.log('Marksheet refreshed:', data);
     } catch (err) {
       setError('Failed to fetch marksheet');
       console.error('Marksheet error:', err);
@@ -101,6 +109,55 @@ const ViolationDetection: React.FC = () => {
     }
   };
 
+  const logDemo = (msg: string) => setDemoSteps(prev => [msg, ...prev].slice(0, 50));
+
+  const resetDemo = async () => {
+    console.log('Reset button clicked - Violation Detection');
+    setDemoRunning(false);
+    setDemoSteps([]);
+    setViolationResponse(null);
+    setError(null);
+    setMarksheet(null); // Clear first
+    
+    try {
+      // Call backend reset endpoint to clear all violations
+      await fetch('http://localhost:8000/api/v1/session/reset', { method: 'POST' });
+      console.log('Backend reset successful');
+    } catch (err) {
+      console.error('Failed to reset backend:', err);
+    }
+    
+    setTimeout(() => fetchMarksheet(), 100); // Then refresh
+  };
+
+  const runDemo = async () => {
+    if (demoRunning) return;
+    setDemoRunning(true);
+    setDemoSteps([]);
+    try {
+      const student = students.find(s => s.roll === demoConfig.studentRoll) || students[0];
+      // Simulate one or two violations
+      for (let i = 1; i <= demoConfig.violationsToSimulate; i++) {
+        const payload: ViolationReport = {
+          roll: student.roll,
+          name: student.name,
+          warning: `Violation ${i} demo`,
+          question_no: i,
+          violation_no: i,
+        };
+        const res = await violationApi.reportViolation(payload);
+        setViolationResponse(res);
+        logDemo(`Step ${i}: ${res.status} → marks ${res.current_marks}%`);
+        await fetchMarksheet();
+      }
+    } catch (e) {
+      setError('Demo failed');
+      console.error(e);
+    } finally {
+      setDemoRunning(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -117,13 +174,22 @@ const ViolationDetection: React.FC = () => {
               </p>
             </div>
           </div>
-          <button
-            onClick={fetchMarksheet}
-            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-          >
-            <RefreshCw className="h-4 w-4" />
-            <span>Refresh</span>
-          </button>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={fetchMarksheet}
+              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+            >
+              <RefreshCw className="h-4 w-4" />
+              <span>Refresh</span>
+            </button>
+            <button
+              onClick={resetDemo}
+              className="flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
+            >
+              <XCircle className="h-4 w-4" />
+              <span>Reset</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -359,6 +425,64 @@ const ViolationDetection: React.FC = () => {
               <Shield className="h-12 w-12 mx-auto mb-4 text-gray-300" />
               <p>No marksheet data available</p>
             </div>
+          )}
+        </div>
+      </div>
+
+      {/* Demo Panel */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Demo</h2>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={runDemo}
+              disabled={demoRunning}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+            >
+              {demoRunning ? 'Running...' : 'Run Demo'}
+            </button>
+            <button
+              onClick={resetDemo}
+              className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Student</label>
+            <select
+              value={demoConfig.studentRoll}
+              onChange={(e) => setDemoConfig(prev => ({ ...prev, studentRoll: Number(e.target.value) }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md"
+            >
+              {students.map(s => (
+                <option key={s.roll} value={s.roll}>{s.name} (Roll: {s.roll})</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Violations</label>
+            <select
+              value={demoConfig.violationsToSimulate}
+              onChange={(e) => setDemoConfig(prev => ({ ...prev, violationsToSimulate: Number(e.target.value) }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md"
+            >
+              <option value={1}>1</option>
+              <option value={2}>2</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-2 p-3 bg-gray-50 rounded border border-gray-200 max-h-48 overflow-auto text-sm">
+          {demoSteps.length === 0 ? (
+            <p className="text-gray-500">No demo steps yet.</p>
+          ) : (
+            <ul className="space-y-1">
+              {demoSteps.map((s, i) => (<li key={i}>{s}</li>))}
+            </ul>
           )}
         </div>
       </div>

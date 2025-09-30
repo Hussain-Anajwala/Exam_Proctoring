@@ -22,6 +22,9 @@ const ExamProcessing: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [examStarted, setExamStarted] = useState(false);
   const [examSubmitted, setExamSubmitted] = useState(false);
+  const [demoRunning, setDemoRunning] = useState(false);
+  const [demoSteps, setDemoSteps] = useState<string[]>([]);
+  const [demoConfig, setDemoConfig] = useState({ correctAnswers: true });
 
   useEffect(() => {
     fetchQuestions();
@@ -131,6 +134,38 @@ const ExamProcessing: React.FC = () => {
     if (percentage >= 80) return 'text-green-600';
     if (percentage >= 60) return 'text-yellow-600';
     return 'text-red-600';
+  };
+
+  const logDemo = (msg: string) => setDemoSteps(prev => [msg, ...prev].slice(0, 50));
+
+  const resetDemo = () => {
+    setDemoRunning(false);
+    setDemoSteps([]);
+    resetExam();
+  };
+
+  const runDemo = async () => {
+    if (demoRunning) return;
+    setDemoRunning(true);
+    setDemoSteps([]);
+    setError(null);
+    try {
+      await startExam();
+      const qs = await examApi.getQuestions();
+      const demoAnswers = qs.questions.map((q: any, idx: number) => demoConfig.correctAnswers ? q.ans : (q.ans === 'A' ? 'B' : 'A'));
+      setAnswers(demoAnswers);
+      logDemo('Answers filled');
+      await submitExam();
+      logDemo('Submitted');
+      await releaseMarks();
+      logDemo('Marks released');
+      await fetchExamStatus();
+    } catch (e) {
+      setError('Demo failed');
+      console.error(e);
+    } finally {
+      setDemoRunning(false);
+    }
   };
 
   return (
@@ -365,6 +400,31 @@ const ExamProcessing: React.FC = () => {
             </p>
           </div>
         )}
+      </div>
+
+      {/* Demo Panel */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Demo</h2>
+          <div className="flex items-center space-x-2">
+            <button onClick={runDemo} disabled={demoRunning} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50">{demoRunning ? 'Running...' : 'Run Demo'}</button>
+            <button onClick={resetDemo} className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700">Reset</button>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Answers</label>
+            <select value={demoConfig.correctAnswers ? 'correct' : 'incorrect'} onChange={(e)=>setDemoConfig({ correctAnswers: e.target.value === 'correct' })} className="w-full px-3 py-2 border border-gray-300 rounded-md">
+              <option value="correct">All correct</option>
+              <option value="incorrect">All incorrect</option>
+            </select>
+          </div>
+        </div>
+        <div className="mt-2 p-3 bg-gray-50 rounded border border-gray-200 max-h-48 overflow-auto text-sm">
+          {demoSteps.length === 0 ? <p className="text-gray-500">No demo steps yet.</p> : (
+            <ul className="space-y-1">{demoSteps.map((s,i)=>(<li key={i}>{s}</li>))}</ul>
+          )}
+        </div>
       </div>
     </div>
   );

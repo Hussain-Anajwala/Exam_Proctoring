@@ -7,12 +7,15 @@ import {
   RefreshCw,
   Download,
   CheckCircle,
-  XCircle
+  XCircle,
+  Lock
 } from 'lucide-react';
 import { databaseApi } from '../../services/api';
 import type { StudentRecord, DatabaseUpdate } from '../../types';
+import { useUser } from '../../contexts/UserContext';
 
-const Database: React.FC = () => {
+const Database = () => {
+  const { user, isTeacher } = useUser();
   const [records, setRecords] = useState<StudentRecord[]>([]);
   const [selectedRecord, setSelectedRecord] = useState<StudentRecord | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -25,18 +28,51 @@ const Database: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [replicaStatus, setReplicaStatus] = useState<any>(null);
+  const [showReplicaInfo, setShowReplicaInfo] = useState(false);
+  const [demoRunning, setDemoRunning] = useState(false);
+  const [demoSteps, setDemoSteps] = useState<string[]>([]);
+  const [demoConfig, setDemoConfig] = useState({ failReplica: 'R1' });
 
   useEffect(() => {
     fetchAllRecords();
+    fetchReplicaStatus();
   }, []);
 
   const fetchAllRecords = async () => {
     try {
       const response = await databaseApi.getAllRecords();
-      setRecords(response.results || []);
+      setRecords(response.records || []);
     } catch (err) {
       setError('Failed to fetch records');
       console.error('Fetch records error:', err);
+    }
+  };
+
+  const fetchReplicaStatus = async () => {
+    try {
+      const data = await databaseApi.getReplicaStatus();
+      setReplicaStatus(data);
+    } catch (err) {
+      console.error('Failed to fetch replica status:', err);
+    }
+  };
+
+  const simulateReplicaFailure = async (replicaName: string) => {
+    try {
+      await databaseApi.failReplica(replicaName);
+      await fetchReplicaStatus();
+    } catch (err) {
+      console.error('Failed to simulate replica failure:', err);
+    }
+  };
+
+  const simulateReplicaRecovery = async (replicaName: string) => {
+    try {
+      await databaseApi.recoverReplica(replicaName);
+      await fetchReplicaStatus();
+    } catch (err) {
+      console.error('Failed to simulate replica recovery:', err);
     }
   };
 
@@ -50,7 +86,29 @@ const Database: React.FC = () => {
       if (minTotal !== '') params.min_total = Number(minTotal);
 
       const response = await databaseApi.searchRecords(params);
-      setRecords(response.results || []);
+      
+      // Filter records based on replica status - only show if replica is online
+      const filteredRecords = (response.records || []).filter(record => {
+        // Check which replica contains this record
+        const recordIndex = (response.records || []).indexOf(record);
+        const replicaIndex = recordIndex % 3; // Assuming 3 replicas (R1, R2, R3)
+        const replicaName = ['R1', 'R2', 'R3'][replicaIndex];
+        
+        // Only show if replica is online
+        if (replicaStatus && replicaStatus.replicas) {
+          const replica = replicaStatus.replicas[replicaName];
+          return replica && replica.status === 'online';
+        }
+        return true; // If no replica status, show all
+      });
+      
+      setRecords(filteredRecords);
+      
+      // Show message if some records were filtered out
+      const totalRecords = response.records?.length || 0;
+      if (filteredRecords.length < totalRecords) {
+        setError(`Showing ${filteredRecords.length} of ${totalRecords} records. Some replicas are offline.`);
+      }
     } catch (err) {
       setError('Failed to search records');
       console.error('Search error:', err);
@@ -120,26 +178,49 @@ const Database: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl shadow-lg p-8 text-white">
         <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <DatabaseIcon className="h-8 w-8 text-blue-600" />
-          <div>
-              <h1 className="text-2xl font-bold text-gray-900">
+          <div className="flex items-center space-x-4">
+            <div className="p-3 bg-white/20 backdrop-blur-sm rounded-lg">
+              <DatabaseIcon className="h-10 w-10 text-white" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold mb-1">
                 Distributed Database
               </h1>
-              <p className="text-gray-600">
+              <p className="text-blue-100 text-lg">
                 Student records with 2PC protocol for updates
               </p>
+              {!isTeacher && (
+                <p className="text-blue-200 text-sm mt-1 flex items-center">
+                  <Lock className="h-4 w-4 mr-1" />
+                  Read-Only Mode
+                </p>
+              )}
             </div>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-3">
             <button
               onClick={fetchAllRecords}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+              className="flex items-center space-x-2 px-6 py-3 bg-white/20 backdrop-blur-sm text-white rounded-lg hover:bg-white/30 transition-all duration-200 border border-white/30"
             >
-              <RefreshCw className="h-4 w-4" />
-              <span>Refresh</span>
+              <RefreshCw className="h-5 w-5" />
+              <span className="font-medium">Refresh</span>
+            </button>
+            <button
+              onClick={() => {
+                setSelectedRecord(null);
+                setUpdateForm({ roll_number: '', mse: 0, ese: 0 });
+                setError(null);
+                setSuccess(null);
+                setSearchTerm('');
+                setMinTotal('');
+                fetchAllRecords();
+              }}
+              className="flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
+            >
+              <XCircle className="h-4 w-4" />
+              <span>Reset</span>
             </button>
             <button
               onClick={exportRecords}
@@ -148,9 +229,109 @@ const Database: React.FC = () => {
               <Download className="h-4 w-4" />
               <span>Export</span>
             </button>
+            <button
+              onClick={() => setShowReplicaInfo(!showReplicaInfo)}
+              className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors"
+            >
+              <DatabaseIcon className="h-4 w-4" />
+              <span>{showReplicaInfo ? 'Hide' : 'Show'} Replicas</span>
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Replica Management Section */}
+      {showReplicaInfo && replicaStatus && (
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            Replica Management & Chunk Distribution
+          </h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            {Object.entries(replicaStatus.replicas || {}).map(([replicaName, info]: [string, any]) => (
+              <div key={replicaName} className="p-4 border border-gray-200 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-medium text-gray-900">{replicaName}</h3>
+                  <span className={`px-2 py-1 rounded-full text-xs ${
+                    info.status === 'online' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                  }`}>
+                    {info.status}
+                  </span>
+                </div>
+                <div className="text-sm text-gray-600 mb-3">
+                  Records: {info.record_count} | Chunks: {info.chunks?.length || 0}
+                </div>
+                
+                {/* Show student names stored in this replica - ONLY if online */}
+                {info.record_count > 0 && info.status === 'online' ? (
+                  <div className="mb-3 p-2 bg-gray-50 rounded max-h-32 overflow-y-auto">
+                    <p className="text-xs font-medium text-gray-700 mb-1">Students:</p>
+                    <div className="flex flex-wrap gap-1">
+                      {records
+                        .filter(record => {
+                          // Check if this record is in this replica
+                          // For simplicity, we'll show all records divided by replica count
+                          const replicaIndex = ['R1', 'R2', 'R3'].indexOf(replicaName);
+                          const recordIndex = records.indexOf(record);
+                          return recordIndex % 3 === replicaIndex || (recordIndex + 1) % 3 === replicaIndex;
+                        })
+                        .slice(0, 10)
+                        .map((record, idx) => (
+                          <span key={idx} className="text-xs bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded">
+                            {record.name}
+                          </span>
+                        ))}
+                      {info.record_count > 10 && (
+                        <span className="text-xs text-gray-500">+{info.record_count - 10} more</span>
+                      )}
+                    </div>
+                  </div>
+                ) : info.status === 'offline' && info.record_count > 0 ? (
+                  <div className="mb-3 p-2 bg-red-50 rounded border border-red-200">
+                    <p className="text-xs font-medium text-red-700">
+                      ⚠ Replica Offline - {info.record_count} records unavailable
+                    </p>
+                  </div>
+                ) : null}
+                
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => simulateReplicaFailure(replicaName)}
+                    disabled={info.status === 'offline'}
+                    className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Fail
+                  </button>
+                  <button
+                    onClick={() => simulateReplicaRecovery(replicaName)}
+                    disabled={info.status === 'online'}
+                    className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Recover
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-4 bg-gray-50 rounded-lg">
+              <h3 className="font-medium text-gray-900 mb-2">Chunk Distribution</h3>
+              <div className="text-sm text-gray-600">
+                <div>Total Chunks: {replicaStatus.total_chunks}</div>
+                <div>Chunk Size: {replicaStatus.chunk_size} records</div>
+              </div>
+            </div>
+            <div className="p-4 bg-gray-50 rounded-lg">
+              <h3 className="font-medium text-gray-900 mb-2">2PC Protocol Status</h3>
+              <div className="text-sm text-gray-600">
+                <div>Replication Factor: 2</div>
+                <div>Consistency: Strong</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Search and Filters */}
@@ -329,12 +510,20 @@ const Database: React.FC = () => {
         </div>
       </div>
 
-      {/* Update Form */}
+      {/* Update Form - Teacher Only */}
       {selectedRecord && (
         <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            Update Record - {selectedRecord.name}
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">
+              Update Record - {selectedRecord.name}
+            </h2>
+            {!isTeacher && (
+              <div className="flex items-center space-x-2 px-3 py-1 bg-yellow-50 border border-yellow-200 rounded-md">
+                <Lock className="h-4 w-4 text-yellow-600" />
+                <span className="text-sm text-yellow-700">Read-Only (Teacher Access Required)</span>
+              </div>
+            )}
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
@@ -364,7 +553,8 @@ const Database: React.FC = () => {
                   ...prev,
                   mse: Number(e.target.value)
                 }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={!isTeacher}
+                className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${!isTeacher ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
               />
             </div>
 
@@ -382,17 +572,19 @@ const Database: React.FC = () => {
                   ...prev,
                   ese: Number(e.target.value)
                 }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={!isTeacher}
+                className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${!isTeacher ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
               />
             </div>
           </div>
 
-          <div className="mt-4 flex items-center space-x-4">
-            <button
-              onClick={updateRecord}
-              disabled={loading}
-              className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
+          {isTeacher && (
+            <div className="mt-4 flex items-center space-x-4">
+              <button
+                onClick={updateRecord}
+                disabled={loading}
+                className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
               {loading ? (
                 <RefreshCw className="h-4 w-4 animate-spin" />
               ) : (
@@ -401,17 +593,18 @@ const Database: React.FC = () => {
               <span>{loading ? 'Updating...' : 'Update Record'}</span>
             </button>
 
-            <button
-              onClick={() => {
-                setSelectedRecord(null);
-                setUpdateForm({ roll_number: '', mse: 0, ese: 0 });
-              }}
-              className="flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
-            >
-              <XCircle className="h-4 w-4" />
-              <span>Cancel</span>
-            </button>
-          </div>
+              <button
+                onClick={() => {
+                  setSelectedRecord(null);
+                  setUpdateForm({ roll_number: '', mse: 0, ese: 0 });
+                }}
+                className="flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
+              >
+                <XCircle className="h-4 w-4" />
+                <span>Cancel</span>
+              </button>
+            </div>
+          )}
 
           {success && (
             <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-md">
@@ -436,6 +629,70 @@ const Database: React.FC = () => {
           )}
         </div>
       )}
+
+      {/* Demo Panel */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Demo</h2>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={async ()=>{
+                if (demoRunning) return; setDemoRunning(true); setDemoSteps([]);
+                try {
+                  // Read → Update → Fail replica → Read
+                  const all = await databaseApi.getAllRecords();
+                  const rec = all.records && all.records[0];
+                  if (!rec) { setDemoSteps(['No records']); setDemoRunning(false); return; }
+                  setDemoSteps(prev=>[`Read ${rec.rn} total=${rec.total}`, ...prev]);
+                  await databaseApi.updateRecord({ roll_number: rec.rn, mse: rec.mse, ese: rec.ese });
+                  setDemoSteps(prev=>[`2PC update on ${rec.rn}`, ...prev]);
+                  await databaseApi.failReplica(demoConfig.failReplica);
+                  setDemoSteps(prev=>[`Replica ${demoConfig.failReplica} failed`, ...prev]);
+                  await fetchReplicaStatus();
+                  const read = await databaseApi.readRecord(rec.rn);
+                  setDemoSteps(prev=>[`Read after failure via ${read.replica}`, ...prev]);
+                } catch (e) {
+                  console.error(e);
+                  setDemoSteps(prev=>['Demo error - see console', ...prev]);
+                } finally {
+                  setDemoRunning(false);
+                }
+              }}
+              disabled={demoRunning}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+            >
+              {demoRunning ? 'Running...' : 'Run Demo'}
+            </button>
+            <button 
+              onClick={() => {
+                setDemoSteps([]);
+                setError(null);
+                setSuccess(null);
+                fetchAllRecords();
+                fetchReplicaStatus();
+              }} 
+              className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Fail Replica</label>
+            <select value={demoConfig.failReplica} onChange={(e)=>setDemoConfig({ failReplica: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md">
+              <option value="R1">R1</option>
+              <option value="R2">R2</option>
+              <option value="R3">R3</option>
+            </select>
+          </div>
+        </div>
+        <div className="mt-2 p-3 bg-gray-50 rounded border border-gray-200 max-h-48 overflow-auto text-sm">
+          {demoSteps.length === 0 ? <p className="text-gray-500">No demo steps yet.</p> : (
+            <ul className="space-y-1">{demoSteps.map((s,i)=>(<li key={i}>{s}</li>))}</ul>
+          )}
+        </div>
+      </div>
     </div>
   );
 };

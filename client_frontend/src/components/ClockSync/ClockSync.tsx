@@ -26,6 +26,12 @@ const ClockSync: React.FC = () => {
   const [syncResult, setSyncResult] = useState<ClockSyncResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [demoRunning, setDemoRunning] = useState(false);
+  const [demoSteps, setDemoSteps] = useState<string[]>([]);
+  const [demoConfig, setDemoConfig] = useState({
+    teacherTime: '10:30:40',
+    studentTime: '10:30:50'
+  });
 
   const generateCurrentTime = () => {
     const now = new Date();
@@ -99,19 +105,70 @@ const ClockSync: React.FC = () => {
     return `${sign}${seconds}s`;
   };
 
+  const logDemo = (msg: string) => setDemoSteps(prev => [msg, ...prev].slice(0, 50));
+
+  const resetDemo = () => {
+    setDemoRunning(false);
+    setDemoSteps([]);
+    setParticipants([]);
+    setSyncResult(null);
+    setError(null);
+  };
+
+  const runDemo = async () => {
+    if (demoRunning) return;
+    setDemoRunning(true);
+    setDemoSteps([]);
+    setError(null);
+    try {
+      await clockApi.registerParticipant({ role: 'teacher', time: demoConfig.teacherTime });
+      await clockApi.registerParticipant({ role: 'student1', time: demoConfig.studentTime });
+      logDemo(`Registered teacher=${demoConfig.teacherTime}, student1=${demoConfig.studentTime}`);
+      const res = await clockApi.startSynchronization();
+      logDemo(`Synchronized → avg ${res.average_time}`);
+      setSyncResult(res);
+    } catch (e) {
+      setError('Demo failed');
+      console.error(e);
+    } finally {
+      setDemoRunning(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="bg-white rounded-lg shadow p-6">
-        <div className="flex items-center space-x-3">
-          <Clock className="h-8 w-8 text-blue-600" />
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">
-              Berkeley Clock Synchronization
-            </h1>
-            <p className="text-gray-600">
-              Synchronize clocks across multiple participants
-            </p>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <Clock className="h-8 w-8 text-blue-600" />
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">
+                Berkeley Clock Synchronization
+              </h1>
+              <p className="text-gray-600">
+                Synchronize clocks across multiple participants
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => {
+                setError(null);
+                // Refresh would fetch status if there was an endpoint
+              }}
+              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+            >
+              <RefreshCw className="h-4 w-4" />
+              <span>Refresh</span>
+            </button>
+            <button
+              onClick={resetDemo}
+              className="flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
+            >
+              <XCircle className="h-4 w-4" />
+              <span>Reset</span>
+            </button>
           </div>
         </div>
       </div>
@@ -304,6 +361,36 @@ const ClockSync: React.FC = () => {
                 </div>
               </div>
             </div>
+          )}
+        </div>
+      </div>
+
+      {/* Demo Panel */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Demo</h2>
+          <div className="flex items-center space-x-2">
+            <button onClick={runDemo} disabled={demoRunning} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50">
+              {demoRunning ? 'Running...' : 'Run Demo'}
+            </button>
+            <button onClick={resetDemo} className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700">Reset</button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Teacher Time</label>
+            <input value={demoConfig.teacherTime} onChange={(e)=>setDemoConfig(prev=>({...prev, teacherTime: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="HH:MM:SS" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Student Time</label>
+            <input value={demoConfig.studentTime} onChange={(e)=>setDemoConfig(prev=>({...prev, studentTime: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="HH:MM:SS" />
+          </div>
+        </div>
+
+        <div className="mt-2 p-3 bg-gray-50 rounded border border-gray-200 max-h-48 overflow-auto text-sm">
+          {demoSteps.length === 0 ? <p className="text-gray-500">No demo steps yet.</p> : (
+            <ul className="space-y-1">{demoSteps.map((s,i)=>(<li key={i}>{s}</li>))}</ul>
           )}
         </div>
       </div>

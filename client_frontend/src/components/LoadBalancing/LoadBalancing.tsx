@@ -19,6 +19,8 @@ interface Submission {
   payload: Record<string, any>;
   response?: LoadBalanceResponse;
   timestamp: Date;
+  worker_id?: string;
+  batch_id?: number;
 }
 
 const LoadBalancing: React.FC = () => {
@@ -28,6 +30,9 @@ const LoadBalancing: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [autoSubmit, setAutoSubmit] = useState(false);
   const [submissionCount, setSubmissionCount] = useState(12);
+  const [demoRunning, setDemoRunning] = useState(false);
+  const [demoSteps, setDemoSteps] = useState<string[]>([]);
+  const [demoConfig, setDemoConfig] = useState({ count: 10 });
 
   useEffect(() => {
     fetchLoadBalanceStatus();
@@ -61,7 +66,9 @@ const LoadBalancing: React.FC = () => {
         student_id: studentId,
         payload: payload,
         response: response,
-        timestamp: new Date()
+        timestamp: new Date(),
+        worker_id: response.worker_id,
+        batch_id: response.batch_id
       };
 
       setSubmissions(prev => [newSubmission, ...prev]);
@@ -72,13 +79,13 @@ const LoadBalancing: React.FC = () => {
       setLoading(false);
     }
   };
-
   const submitMultiple = async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const promises = [];
+      const promises: Promise<Submission>[] = [];
+      
       for (let i = 0; i < submissionCount; i++) {
         const studentId = `student_${i}`;
         const payload = {
@@ -96,7 +103,9 @@ const LoadBalancing: React.FC = () => {
             student_id: studentId,
             payload: payload,
             response: response,
-            timestamp: new Date()
+            timestamp: new Date(),
+            worker_id: response.worker_id,
+            batch_id: response.batch_id
           }))
         );
       }
@@ -114,6 +123,7 @@ const LoadBalancing: React.FC = () => {
   const clearSubmissions = () => {
     setSubmissions([]);
     setError(null);
+    fetchLoadBalanceStatus(); // Refresh status after clearing
   };
 
   const getStatusIcon = (via: string) => {
@@ -255,6 +265,60 @@ const LoadBalancing: React.FC = () => {
                 </div>
               </div>
 
+              {/* Batch Processing Status */}
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-blue-800">Batch Processing</span>
+                  <span className={`text-xs px-2 py-1 rounded-full ${
+                    loadBalanceStatus.batch_processing ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                  }`}>
+                    {loadBalanceStatus.batch_processing ? 'Active' : 'Inactive'}
+                  </span>
+                </div>
+                <div className="text-xs text-blue-600">
+                  Batch #{loadBalanceStatus.current_batch_id} | 
+                  Processed: {loadBalanceStatus.total_processed}/{loadBalanceStatus.received_count}
+                </div>
+              </div>
+
+              {/* Worker Status */}
+              <div className="p-3 bg-gray-50 rounded-md">
+                <div className="text-sm font-medium text-gray-700 mb-2">Worker Status</div>
+                <div className="grid grid-cols-2 gap-1">
+                  {Object.entries(loadBalanceStatus.worker_status || {}).map(([worker, status]) => (
+                    <div key={worker} className="flex items-center justify-between text-xs">
+                      <span className="text-gray-600">{worker}</span>
+                      <span className={`px-1 py-0.5 rounded text-xs ${
+                        status === 'processing' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Batch Completion Status */}
+              {loadBalanceStatus.batch_complete && (
+                <div className="mt-4 p-4 bg-green-50 border-2 border-green-300 rounded-md">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <CheckCircle className="h-5 w-5 text-green-600" />
+                    <span className="text-sm font-bold text-green-800">
+                      Batch #{loadBalanceStatus.current_batch_id} Complete!
+                    </span>
+                  </div>
+                  {loadBalanceStatus.backup_response_sent && (
+                    <div className="space-y-1 text-xs text-green-700">
+                      <p>✓ Backup Server → Main Server: Batch OK</p>
+                      <p className="font-semibold">✓ Main Server: All Submissions SUBMITTED</p>
+                    </div>
+                  )}
+                  <div className="mt-2 text-xs text-green-600">
+                    Local: {loadBalanceStatus.local_done_count} | Backup: {loadBalanceStatus.backup_done_count}
+                  </div>
+                </div>
+              )}
+
               <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
                 <div className="flex items-center space-x-2">
                   <Activity className="h-4 w-4 text-blue-600" />
@@ -359,45 +423,136 @@ const LoadBalancing: React.FC = () => {
 
         {submissions.length > 0 ? (
           <div className="space-y-3">
-            {submissions.slice(0, 20).map((submission) => (
-              <div key={submission.id} className="p-4 border border-gray-200 rounded-md">
+            {(() => {
+              const localSubmissions = submissions.filter(s => s.response?.via === 'main');
+              const backupSubmissions = submissions.filter(s => s.response?.via === 'backup');
+              
+              return (
+                <>
+                  {/* Show ALL submissions individually (both local and backup) */}
+                  {submissions.slice(0, 20).map((submission) => (
+                    <div key={submission.id} className="p-4 border border-gray-200 rounded-md">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center space-x-2">
+                          {getStatusIcon(submission.response?.via || 'unknown')}
+                          <span className="text-sm font-medium text-gray-900">
+                            {submission.student_id}
+                          </span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(submission.response?.status || 'unknown')}`}>
+                            {submission.response?.status || 'pending'}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            {submission.timestamp.toLocaleTimeString()}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="text-gray-600">Via:</span>
+                          <span className="ml-2 font-medium text-gray-900">
+                            {submission.response?.via || 'unknown'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Type:</span>
+                          <span className="ml-2 font-medium text-gray-900">
+                            {submission.payload.type || 'unknown'}
+                          </span>
+                        </div>
+                        {submission.worker_id && (
+                          <div>
+                            <span className="text-gray-600">Worker:</span>
+                            <span className="ml-2 font-medium text-gray-900">
+                              {submission.worker_id}
+                            </span>
+                          </div>
+                        )}
+                        {submission.batch_id && (
+                          <div>
+                            <span className="text-gray-600">Batch:</span>
+                            <span className="ml-2 font-medium text-gray-900">
+                              #{submission.batch_id}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      
+                      <p className="text-sm text-gray-600 mt-2">
+                        {submission.response?.message || 'Processing...'}
+                      </p>
+                    </div>
+                  ))}
+                  
+                  {/* Show backup submissions as a single batch */}
+                  {backupSubmissions.length > 0 && loadBalanceStatus?.batch_complete && (
+                    <div className="p-4 bg-blue-50 border-2 border-blue-400 rounded-lg">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center space-x-2">
+                          <Database className="h-5 w-5 text-blue-600" />
+                          <span className="text-sm font-bold text-blue-900">
+                            BACKUP SERVER → Batch Response
+                          </span>
+                        </div>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800`}>
+                          OK
+                        </span>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <p className="text-sm font-semibold text-blue-800">
+                          ✓ Batch #{loadBalanceStatus.current_batch_id} - All {backupSubmissions.length} migrated requests processed
+                        </p>
+                        
+                        {/* List migrated student IDs */}
+                        <div className="pl-4 border-l-2 border-blue-300">
+                          <p className="text-xs text-blue-700 font-medium mb-1">Processed Students:</p>
+                          <div className="flex flex-wrap gap-1">
+                            {backupSubmissions.map((sub, idx) => (
+                              <span key={idx} className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
+                                {sub.student_id}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        
+                        <p className="text-xs text-blue-600 mt-2">
+                          Type: {backupSubmissions[0]?.payload.type || 'batch'} | 
+                          Batch: #{backupSubmissions[0]?.batch_id || loadBalanceStatus.current_batch_id}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+            
+            {/* Main Server Final Acceptance */}
+            {loadBalanceStatus?.batch_complete && (
+              <div className="p-4 bg-green-50 border-2 border-green-400 rounded-lg">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center space-x-2">
-                    {getStatusIcon(submission.response?.via || 'unknown')}
-                    <span className="text-sm font-medium text-gray-900">
-                      {submission.student_id}
+                    <CheckCircle className="h-5 w-5 text-green-600" />
+                    <span className="text-sm font-bold text-green-900">
+                      MAIN SERVER
                     </span>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(submission.response?.status || 'unknown')}`}>
-                      {submission.response?.status || 'pending'}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {submission.timestamp.toLocaleTimeString()}
-                    </span>
-                  </div>
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800`}>
+                    SUBMITTED
+                  </span>
                 </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-gray-600">Via:</span>
-                    <span className="ml-2 font-medium text-gray-900">
-                      {submission.response?.via || 'unknown'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">Type:</span>
-                    <span className="ml-2 font-medium text-gray-900">
-                      {submission.payload.type || 'unknown'}
-                    </span>
-                  </div>
+                <div className="space-y-1 pl-7">
+                  <p className="text-sm font-bold text-green-800">
+                    ✓ All Submissions Accepted and SUBMITTED
+                  </p>
+                  <p className="text-xs text-green-600">
+                    Total: {loadBalanceStatus.total_processed} submissions (Local: {loadBalanceStatus.local_done_count}, Backup: {loadBalanceStatus.backup_done_count})
+                  </p>
                 </div>
-                
-                <p className="text-sm text-gray-600 mt-2">
-                  {submission.response?.message || 'Processing...'}
-                </p>
               </div>
-            ))}
+            )}
           </div>
         ) : (
           <div className="text-center py-8 text-gray-500">
@@ -408,6 +563,62 @@ const LoadBalancing: React.FC = () => {
             </p>
           </div>
         )}
+      </div>
+
+      {/* Demo Panel */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Demo</h2>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={async ()=>{
+                if (demoRunning) return; setDemoRunning(true); setDemoSteps([]);
+                try {
+                  const promises = [] as Promise<void>[];
+                  for (let i=0;i<demoConfig.count;i++) {
+                    promises.push(loadBalanceApi.submitForProcessing({ student_id: `demo_${i}`, payload: { type: 'demo', idx: i }}).then(r=>{
+                      setDemoSteps(prev=>[`Req ${i}: ${r.status} via=${r.via}`, ...prev].slice(0,50));
+                    }));
+                  }
+                  await Promise.all(promises);
+                  const st = await loadBalanceApi.getLoadBalanceStatus();
+                  setLoadBalanceStatus(st);
+                  setDemoSteps(prev=>['Completed batch demo', ...prev].slice(0,50));
+                } catch (e) {
+                  console.error(e);
+                  setDemoSteps(prev=>['Demo error - see console', ...prev]);
+                } finally {
+                  setDemoRunning(false);
+                }
+              }}
+              disabled={demoRunning}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+            >
+              {demoRunning ? 'Running...' : 'Run Demo'}
+            </button>
+            <button 
+              onClick={() => {
+                setDemoSteps([]);
+                setError(null);
+                clearSubmissions();
+              }} 
+              className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Requests</label>
+            <input type="number" min={1} max={50} value={demoConfig.count} onChange={(e)=>setDemoConfig({ count: Number(e.target.value) })} className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+          </div>
+        </div>
+        <div className="mt-2 p-3 bg-gray-50 rounded border border-gray-200 max-h-48 overflow-auto text-sm">
+          {demoSteps.length === 0 ? <p className="text-gray-500">No demo steps yet.</p> : (
+            <ul className="space-y-1">{demoSteps.map((s,i)=>(<li key={i}>{s}</li>))}</ul>
+          )}
+        </div>
       </div>
     </div>
   );

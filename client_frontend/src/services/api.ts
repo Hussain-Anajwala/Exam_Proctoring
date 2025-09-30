@@ -96,14 +96,16 @@ export const mutexApi = {
   },
 
   releaseCriticalSection: async (studentId: string): Promise<MutexResponse> => {
-    const response = await api.post('/mutex/release', null, {
-      params: { student_id: studentId }
-    });
+    const response = await api.post('/mutex/release', { student_id: studentId });
     return response.data;
   },
 
   getMutexStatus: async (): Promise<MutexStatus> => {
     const response = await api.get('/mutex/status');
+    return response.data;
+  },
+  checkGrant: async (studentId: string): Promise<MutexResponse> => {
+    const response = await api.get(`/mutex/check/${studentId}`);
     return response.data;
   },
 };
@@ -170,6 +172,18 @@ export const databaseApi = {
     const response = await api.get('/database/search', { params });
     return response.data;
   },
+  getReplicaStatus: async (): Promise<any> => {
+    const response = await api.get('/database/replicas');
+    return response.data;
+  },
+  failReplica: async (replicaName: string): Promise<any> => {
+    const response = await api.post(`/database/replica/${replicaName}/fail`);
+    return response.data;
+  },
+  recoverReplica: async (replicaName: string): Promise<any> => {
+    const response = await api.post(`/database/replica/${replicaName}/recover`);
+    return response.data;
+  },
 };
 
 // System Status API
@@ -183,13 +197,30 @@ export const systemApi = {
     const response = await api.get('/docs');
     return response.data;
   },
+  startSession: async (durationMinutes: number): Promise<any> => {
+    const response = await api.post('/session/start', null, { params: { duration_minutes: durationMinutes } });
+    return response.data;
+  },
+  stopSession: async (): Promise<any> => {
+    const response = await api.post('/session/stop');
+    return response.data;
+  },
+  resetSession: async (): Promise<any> => {
+    const response = await api.post('/session/reset');
+    return response.data;
+  },
+  getSessionStatus: async (): Promise<any> => {
+    const response = await api.get('/session/status');
+    return response.data;
+  },
 };
 
 // Health check
 export const healthCheck = async (): Promise<boolean> => {
   try {
-    const response = await axios.get('/');
-    return response.status === 200;
+    // Use absolute /api to avoid /api/v1 prefix for health endpoint
+    const response = await axios.get('/api/health');
+    return response.status === 200 && response.data.status === 'ok';
   } catch (error) {
     console.error('Health check failed:', error);
     return false;

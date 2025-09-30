@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Shield, 
   Clock, 
@@ -10,12 +11,14 @@ import {
   Users,
   AlertTriangle,
   CheckCircle,
-  XCircle
+  XCircle,
+  ArrowRight
 } from 'lucide-react';
 import { systemApi, healthCheck } from '../../services/api';
 import type { SystemStatus } from '../../types';
 
-const Dashboard: React.FC = () => {
+const Dashboard = () => {
+  const navigate = useNavigate();
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [isHealthy, setIsHealthy] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
@@ -46,12 +49,17 @@ const Dashboard: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  const navigateToTask = (taskPath: string) => {
+    navigate(taskPath);
+  };
+
   const features = [
     {
       name: 'Violation Detection',
       description: 'Real-time violation reporting and tracking',
       icon: Shield,
       status: systemStatus?.components.exam_proctoring || 'unknown',
+      path: '/violations',
       stats: {
         label: 'Violations Reported',
         value: systemStatus?.statistics.violations_reported || 0
@@ -62,6 +70,7 @@ const Dashboard: React.FC = () => {
       description: 'Berkeley clock synchronization system',
       icon: Clock,
       status: systemStatus?.components.clock_sync || 'unknown',
+      path: '/clock-sync',
       stats: {
         label: 'Participants',
         value: 'Multi-participant'
@@ -72,6 +81,7 @@ const Dashboard: React.FC = () => {
       description: 'Distributed mutual exclusion algorithm',
       icon: Lock,
       status: systemStatus?.components.mutual_exclusion || 'unknown',
+      path: '/mutex',
       stats: {
         label: 'Active Sessions',
         value: 'Token-based'
@@ -82,6 +92,7 @@ const Dashboard: React.FC = () => {
       description: 'Automated exam processing and scoring',
       icon: BookOpen,
       status: systemStatus?.components.exam_processing || 'unknown',
+      path: '/exam',
       stats: {
         label: 'Exams Submitted',
         value: systemStatus?.statistics.exam_submissions || 0
@@ -92,6 +103,7 @@ const Dashboard: React.FC = () => {
       description: 'Dynamic load balancing with backup migration',
       icon: Loader,
       status: systemStatus?.components.load_balancing || 'unknown',
+      path: '/load-balance',
       stats: {
         label: 'Processing Mode',
         value: 'Auto-migration'
@@ -102,6 +114,7 @@ const Dashboard: React.FC = () => {
       description: 'Database with 2PC protocol',
       icon: Database,
       status: systemStatus?.components.distributed_database || 'unknown',
+      path: '/database',
       stats: {
         label: 'Records',
         value: systemStatus?.statistics.database_records || 0
@@ -156,27 +169,28 @@ const Dashboard: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl shadow-lg p-8 text-white">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">
+            <h1 className="text-4xl font-bold mb-2">
               Exam Proctoring System
             </h1>
-            <p className="mt-2 text-gray-600">
-              Unified system combining all 8 exam proctoring tasks
+            <p className="text-blue-100 text-lg">
+              Unified distributed system for secure exam management
             </p>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-3 bg-white/10 backdrop-blur-sm rounded-lg px-4 py-3">
             {isHealthy ? (
-              <CheckCircle className="h-8 w-8 text-green-500" />
+              <CheckCircle className="h-8 w-8 text-green-300" />
             ) : (
-              <XCircle className="h-8 w-8 text-red-500" />
+              <XCircle className="h-8 w-8 text-red-300" />
             )}
-            <span className={`text-sm font-medium ${
-              isHealthy ? 'text-green-700' : 'text-red-700'
-            }`}>
-              {isHealthy ? 'System Online' : 'System Offline'}
-            </span>
+            <div>
+              <p className="text-xs text-blue-100">System Status</p>
+              <p className="text-sm font-bold">
+                {isHealthy ? 'Online' : 'Offline'}
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -184,50 +198,58 @@ const Dashboard: React.FC = () => {
       {/* System Statistics */}
       {systemStatus && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Users className="h-8 w-8 text-blue-600" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Total Students</p>
-                <p className="text-2xl font-bold text-gray-900">
+          <div className="bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-200 p-6 border-l-4 border-blue-500">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600 mb-1">Total Students</p>
+                <p className="text-3xl font-bold text-gray-900">
                   {systemStatus.statistics.total_students}
                 </p>
               </div>
+              <div className="p-3 bg-blue-100 rounded-lg">
+                <Users className="h-8 w-8 text-blue-600" />
+              </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <AlertTriangle className="h-8 w-8 text-orange-600" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Violations</p>
-                <p className="text-2xl font-bold text-gray-900">
+          <div className="bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-200 p-6 border-l-4 border-orange-500">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600 mb-1">Violations</p>
+                <p className="text-3xl font-bold text-gray-900">
                   {systemStatus.statistics.violations_reported}
                 </p>
               </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <XCircle className="h-8 w-8 text-red-600" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Terminated</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {systemStatus.statistics.terminated_students}
-                </p>
+              <div className="p-3 bg-orange-100 rounded-lg">
+                <AlertTriangle className="h-8 w-8 text-orange-600" />
               </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <BookOpen className="h-8 w-8 text-green-600" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Exams</p>
-                <p className="text-2xl font-bold text-gray-900">
+          <div className="bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-200 p-6 border-l-4 border-red-500">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600 mb-1">Terminated</p>
+                <p className="text-3xl font-bold text-gray-900">
+                  {systemStatus.statistics.terminated_students}
+                </p>
+              </div>
+              <div className="p-3 bg-red-100 rounded-lg">
+                <XCircle className="h-8 w-8 text-red-600" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-200 p-6 border-l-4 border-green-500">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600 mb-1">Exams</p>
+                <p className="text-3xl font-bold text-gray-900">
                   {systemStatus.statistics.exam_submissions}
                 </p>
+              </div>
+              <div className="p-3 bg-green-100 rounded-lg">
+                <BookOpen className="h-8 w-8 text-green-600" />
               </div>
             </div>
           </div>
@@ -239,34 +261,49 @@ const Dashboard: React.FC = () => {
         {features.map((feature) => {
           const Icon = feature.icon;
           return (
-            <div key={feature.name} className="bg-white rounded-lg shadow p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-3">
-                  <Icon className="h-8 w-8 text-blue-600" />
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    {feature.name}
-                  </h3>
+            <div 
+              key={feature.name} 
+              onClick={() => navigateToTask(feature.path)}
+              className="group bg-white rounded-xl shadow-md hover:shadow-xl cursor-pointer transition-all duration-300 overflow-hidden border border-gray-100 hover:border-blue-300"
+            >
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 bg-blue-50 rounded-lg group-hover:bg-blue-100 transition-colors">
+                    <Icon className="h-8 w-8 text-blue-600" />
+                  </div>
+                  {getStatusIcon(feature.status)}
                 </div>
-                {getStatusIcon(feature.status)}
+                
+                <h3 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-blue-600 transition-colors">
+                  {feature.name}
+                </h3>
+                
+                <p className="text-gray-600 mb-4 text-sm">{feature.description}</p>
+                
+                <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(feature.status)}`}>
+                    {feature.status}
+                  </span>
+                  <div className="text-right">
+                    <p className="text-xs text-gray-500">{feature.stats.label}</p>
+                    <p className="text-lg font-bold text-gray-900">
+                      {feature.stats.value}
+                    </p>
+                  </div>
+                </div>
               </div>
               
-              <p className="text-gray-600 mb-4">{feature.description}</p>
-              
-              <div className="flex items-center justify-between">
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(feature.status)}`}>
-                  {feature.status}
-                </span>
-                <div className="text-right">
-                  <p className="text-sm text-gray-600">{feature.stats.label}</p>
-                  <p className="text-lg font-semibold text-gray-900">
-                    {feature.stats.value}
-                  </p>
+              <div className="px-6 py-3 bg-gray-50 group-hover:bg-blue-50 transition-colors">
+                <div className="flex items-center justify-between text-blue-600 text-sm font-medium">
+                  <span>Open Task</span>
+                  <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
                 </div>
               </div>
             </div>
           );
         })}
       </div>
+
 
       {/* System Info */}
       {systemStatus && (

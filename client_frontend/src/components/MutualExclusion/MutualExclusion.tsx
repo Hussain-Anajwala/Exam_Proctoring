@@ -29,6 +29,13 @@ const MutualExclusion: React.FC = () => {
   const [responses, setResponses] = useState<MutexResponse[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [demoRunning, setDemoRunning] = useState(false);
+  const [demoSteps, setDemoSteps] = useState<string[]>([]);
+  const [demoConfig, setDemoConfig] = useState({
+    t1: 1000,
+    t2: 1001,
+    t3: 1002,
+  });
 
   useEffect(() => {
     fetchMutexStatus();
@@ -37,9 +44,11 @@ const MutualExclusion: React.FC = () => {
   }, []);
 
   const fetchMutexStatus = async () => {
+    console.log('Refresh button clicked - Mutual Exclusion');
     try {
       const status = await mutexApi.getMutexStatus();
-      setMutexStatus(status);
+      console.log('Mutex status refreshed:', status);
+      setMutexStatus({...status}); // Force new object reference
     } catch (err) {
       console.error('Failed to fetch mutex status:', err);
     }
@@ -73,6 +82,8 @@ const MutualExclusion: React.FC = () => {
             ? { ...s, status: 'waiting' as const }
             : s
         ));
+        // Start polling for grant
+        pollForGrant(student.id);
       }
     } catch (err) {
       setError('Failed to request critical section');
@@ -80,6 +91,34 @@ const MutualExclusion: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const pollForGrant = async (studentId: string) => {
+    const maxAttempts = 30; // Poll for up to 60 seconds
+    let attempts = 0;
+    
+    const poll = async () => {
+      try {
+        const data = await mutexApi.checkGrant(studentId);
+
+        if (data.status === 'granted') {
+          setStudents(prev => prev.map(s => 
+            s.id === studentId ? { ...s, status: 'active' as const } : s
+          ));
+          setResponses(prev => [...prev, data]);
+          return;
+        }
+        
+        attempts++;
+        if (attempts < maxAttempts) {
+          setTimeout(poll, 2000); // Poll every 2 seconds
+        }
+      } catch (err) {
+        console.error('Polling error:', err);
+      }
+    };
+    
+    poll();
   };
 
   const releaseCriticalSection = async (studentId: string) => {
@@ -90,10 +129,10 @@ const MutualExclusion: React.FC = () => {
       const response = await mutexApi.releaseCriticalSection(studentId);
       setResponses(prev => [...prev, response]);
 
-      // Update student status
+      // Update student status back to waiting so they can request again
       setStudents(prev => prev.map(s => 
         s.id === studentId 
-          ? { ...s, status: 'completed' as const }
+          ? { ...s, status: 'waiting' as const }
           : s
       ));
     } catch (err) {
@@ -104,7 +143,8 @@ const MutualExclusion: React.FC = () => {
     }
   };
 
-  const resetSimulation = () => {
+  const resetSimulation = async () => {
+    console.log('Reset button clicked - Mutual Exclusion');
     setStudents([
       { id: 's1', name: 'Student 1', timestamp: 1000, status: 'waiting' },
       { id: 's2', name: 'Student 2', timestamp: 1001, status: 'waiting' },
@@ -112,6 +152,97 @@ const MutualExclusion: React.FC = () => {
     ]);
     setResponses([]);
     setError(null);
+    setMutexStatus(null); // Clear first
+    
+    try {
+      // Reset backend mutex state by releasing any current holder
+      const status = await mutexApi.getMutexStatus();
+      if (status.current_holder && status.current_holder !== 'Teacher') {
+        await mutexApi.releaseCriticalSection(status.current_holder);
+        console.log('Backend mutex reset - released current holder');
+      }
+    } catch (err) {
+      console.error('Failed to reset backend mutex:', err);
+    }
+    
+    setTimeout(() => fetchMutexStatus(), 100); // Then refresh
+    console.log('Simulation reset complete');
+  };
+
+  const logDemo = (msg: string) => setDemoSteps(prev => [msg, ...prev].slice(0, 50));
+
+  const resetDemo = () => {
+    setDemoRunning(false);
+    setDemoSteps([]);
+    resetSimulation();
+  };
+
+  const runDemo = async () => {
+    if (demoRunning) return;
+    setDemoRunning(true);
+    setDemoSteps([]);
+    setError(null);
+    try {
+      // Request sequence s1 -> s2 -> s3, release in order
+      const r1 = await mutexApi.requestCriticalSection({ student_id: 's1', timestamp: demoConfig.t1 });
+      logDemo(`s1 request → ${r1.status}`);
+      await new Promise(r => setTimeout(r, 600));
+      const r2 = await mutexApi.requestCriticalSection({ student_id: 's2', timestamp: demoConfig.t2 });
+      logDemo(`s2 request → ${r2.status}`);
+      await new Promise(r => setTimeout(r, 600));
+      const r3 = await mutexApi.requestCriticalSection({ student_id: 's3', timestamp: demoConfig.t3 });
+      logDemo(`s3 request → ${r3.status}`);
+      await new Promise(r => setTimeout(r, 1000));
+      const rel1 = await mutexApi.releaseCriticalSection('s1');
+      logDemo(`s1 release → ${rel1.status}`);
+      await new Promise(r => setTimeout(r, 1000));
+      const rel2 = await mutexApi.releaseCriticalSection('s2');
+      logDemo(`s2 release → ${rel2.status}`);
+      await new Promise(r => setTimeout(r, 1000));
+      const rel3 = await mutexApi.releaseCriticalSection('s3');
+      logDemo(`s3 release → ${rel3.status}`);
+      fetchMutexStatus();
+    } catch (e) {
+      setError('Demo failed');
+      console.error(e);
+    } finally {
+      setDemoRunning(false);
+    }
+  };
+
+  const simulateSequence = async () => {
+    setLoading(true);
+    setError(null);
+    setResponses([]);
+    
+    try {
+      // Step 1: s1 requests CS
+      await requestCriticalSection(students[0]);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Step 2: s2 and s3 request CS (while s1 is in CS)
+      await requestCriticalSection(students[1]);
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await requestCriticalSection(students[2]);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Step 3: s1 releases CS (s2 should get it)
+      await releaseCriticalSection('s1');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Step 4: s2 releases CS (s3 should get it)
+      await releaseCriticalSection('s2');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Step 5: s3 releases CS
+      await releaseCriticalSection('s3');
+      
+    } catch (err) {
+      setError('Simulation failed');
+      console.error('Simulation error:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const getStatusIcon = (status: string) => {
@@ -178,6 +309,14 @@ const MutualExclusion: React.FC = () => {
             >
               <RefreshCw className="h-4 w-4" />
               <span>Refresh</span>
+            </button>
+            <button
+              onClick={simulateSequence}
+              disabled={loading}
+              className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:opacity-50"
+            >
+              <Play className="h-4 w-4" />
+              <span>Simulate Sequence</span>
             </button>
             <button
               onClick={resetSimulation}
@@ -378,6 +517,36 @@ const MutualExclusion: React.FC = () => {
             </p>
           </div>
         )}
+      </div>
+
+      {/* Demo Panel */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Demo</h2>
+          <div className="flex items-center space-x-2">
+            <button onClick={runDemo} disabled={demoRunning} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50">{demoRunning ? 'Running...' : 'Run Demo'}</button>
+            <button onClick={resetDemo} className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700">Reset</button>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Timestamp s1</label>
+            <input type="number" value={demoConfig.t1} onChange={(e)=>setDemoConfig(prev=>({...prev, t1: Number(e.target.value)}))} className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Timestamp s2</label>
+            <input type="number" value={demoConfig.t2} onChange={(e)=>setDemoConfig(prev=>({...prev, t2: Number(e.target.value)}))} className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Timestamp s3</label>
+            <input type="number" value={demoConfig.t3} onChange={(e)=>setDemoConfig(prev=>({...prev, t3: Number(e.target.value)}))} className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+          </div>
+        </div>
+        <div className="mt-2 p-3 bg-gray-50 rounded border border-gray-200 max-h-48 overflow-auto text-sm">
+          {demoSteps.length === 0 ? <p className="text-gray-500">No demo steps yet.</p> : (
+            <ul className="space-y-1">{demoSteps.map((s,i)=>(<li key={i}>{s}</li>))}</ul>
+          )}
+        </div>
       </div>
     </div>
   );

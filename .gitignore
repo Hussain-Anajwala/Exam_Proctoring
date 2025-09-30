@@ -1,3 +1,7 @@
+# Dependencies
+node_modules/
+client_frontend/node_modules/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -6,13 +10,6 @@ __pycache__/
 # C extensions
 *.so
 venv/
-*.json
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
 eggs/
 .eggs/
 lib/
@@ -111,3 +108,26 @@ cython_debug/
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+
+# Frontend Build
+client_frontend/dist/
+client_frontend/.vite/
+client_frontend/.env
+client_frontend/.env.local
+
+# Temporary documentation files (keep only README.md and FINAL_SUMMARY.md)
+BACKEND_TEST_REPORT.md
+FINAL_IMPLEMENTATION_STATUS.md
+FULL_STACK_GUIDE.md
+IMPLEMENTATION_COMPLETE_SUMMARY.md
+INTEGRATION_GUIDE.md
+MANUAL_TEST_GUIDE.md
+PROJECT_SUMMARY.md
+QUICK_START.md
+REFRESH_RESET_FIX.md
+ROLE_BASED_ACCESS_IMPLEMENTATION.md
+TESTING_GUIDE.md
+TEST_VERIFICATION_SUMMARY.md
+UI_BUTTONS_FIXED.md
+UI_IMPROVEMENT_PLAN.md
+UI_PROGRESS.md

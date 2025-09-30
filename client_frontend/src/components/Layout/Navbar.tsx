@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Shield, 
   Clock, 
@@ -8,17 +8,31 @@ import {
   Loader, 
   Database, 
   Activity,
+  Users,
   Menu,
-  X
+  X,
+  LogOut,
+  User
 } from 'lucide-react';
 import { useState } from 'react';
+import { useUser } from '../../contexts/UserContext';
 
-const Navbar: React.FC = () => {
+const Navbar = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, logout } = useUser();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   const navigation = [
     { name: 'Dashboard', href: '/', icon: Activity },
+    { name: 'Teacher', href: '/teacher', icon: Shield },
+    { name: 'Processor', href: '/processor', icon: Activity },
+    { name: 'Student', href: '/student', icon: Users },
     { name: 'Violation Detection', href: '/violations', icon: Shield },
     { name: 'Clock Sync', href: '/clock-sync', icon: Clock },
     { name: 'Mutual Exclusion', href: '/mutex', icon: Lock },
@@ -45,8 +59,8 @@ const Navbar: React.FC = () => {
           </div>
 
           {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center space-x-8">
-            {navigation.map((item) => {
+          <div className="hidden md:flex items-center space-x-4">
+            {navigation.slice(0, 4).map((item) => {
               const Icon = item.icon;
               return (
                 <Link
@@ -63,6 +77,26 @@ const Navbar: React.FC = () => {
                 </Link>
               );
             })}
+            
+            {/* User Info */}
+            {user && (
+              <div className="flex items-center space-x-3 ml-4 pl-4 border-l border-gray-300">
+                <div className="flex items-center space-x-2 px-3 py-1 bg-gray-100 rounded-md">
+                  <User className="h-4 w-4 text-gray-600" />
+                  <div className="text-sm">
+                    <p className="font-medium text-gray-900">{user.name}</p>
+                    <p className="text-xs text-gray-600 capitalize">{user.role}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center space-x-1 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span>Logout</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Mobile menu button */}
